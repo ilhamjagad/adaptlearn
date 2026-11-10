@@ -40,7 +40,11 @@ const getLevelProgress = (exp) => {
 const getBadge = (level) => level >= 100
   ? { level: 100, name: 'Demon King', icon: '👹', color: 'bg-red-100 text-red-900' }
   : { level, ...LEVEL_BADGES[Math.min(level - 1, 9)] };
-const getUnlockedBadges = (level) => Array.from({ length: level }, (_, index) => getBadge(index + 1));
+const getUnlockedBadges = (level) => {
+  const badgeLevels = [...Array(Math.min(level, 10)).keys()].map(index => index + 1);
+  if (level >= 100) badgeLevels.push(100);
+  return badgeLevels.map(getBadge);
+};
 const getNextBadge = (level) => level >= 100 ? null : getBadge(level + 1);
 
 const Card = ({ children, className = '' }) => (
@@ -700,7 +704,7 @@ function Leaderboard({ users, currentUser }) {
           <div className="col-span-2 text-center">Rank</div>
           <div className="col-span-6">Student</div>
           <div className="col-span-2 text-center">Level</div>
-          <div className="col-span-2 text-right">Total EXP</div>
+          <div className="col-span-2 text-center">Total EXP</div>
         </div>
         
         <div className="divide-y divide-slate-100">
@@ -744,7 +748,7 @@ function Leaderboard({ users, currentUser }) {
                       {getLevel(student.exp)}
                     </div>
                   </div>
-                  <div className="col-span-2 text-right font-bold text-blue-600">
+                  <div className="col-span-2 text-center font-bold text-blue-600">
                     {student.exp}
                   </div>
                 </div>
