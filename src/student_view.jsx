@@ -2,17 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { Clock, Bell, Trophy, BookOpen, Play, CheckSquare, Settings, Award, Square, Gamepad2, Plus, Paperclip, Link as LinkIcon, FileText, Image, Upload, X } from 'lucide-react';
 import { collection, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 
-const LEVEL_NAMES = [
-  'EXP Trainee',
-  'Focus Adventurer',
-  'Task Hunter',
-  'Time Weaver',
-  'Deadline Knight',
-  'Productivity Mage',
-  'Wisdom Conqueror',
-  'Master Strategist',
-  'EXP Overlord',
-  'Supreme Archmage of AdaptLearn',
+const LEVEL_BADGES = [
+  { name: 'EXP Trainee', icon: '🎯', color: 'bg-yellow-100 text-yellow-800' },
+  { name: 'Focus Adventurer', icon: '🧭', color: 'bg-emerald-100 text-emerald-800' },
+  { name: 'Task Hunter', icon: '🏹', color: 'bg-teal-100 text-teal-800' },
+  { name: 'Time Weaver', icon: '⏳', color: 'bg-sky-100 text-sky-800' },
+  { name: 'Deadline Knight', icon: '🛡️', color: 'bg-indigo-100 text-indigo-800' },
+  { name: 'Productivity Mage', icon: '🧙‍♂️', color: 'bg-purple-100 text-purple-800' },
+  { name: 'Wisdom Conqueror', icon: '⚔️', color: 'bg-fuchsia-100 text-fuchsia-800' },
+  { name: 'Master Strategist', icon: '♟️', color: 'bg-amber-100 text-amber-800' },
+  { name: 'EXP Overlord', icon: '💎', color: 'bg-cyan-100 text-cyan-800' },
+  { name: 'Supreme Archmage of AdaptLearn', icon: '👑', color: 'bg-rose-100 text-rose-800' },
 ];
 const LEVEL_REQ = (level) => level <= 3 ? 300 : level <= 6 ? 600 : level <= 8 ? 800 : level <= 10 ? 1000 : 2000;
 const getLevel = (exp) => {
@@ -37,9 +37,11 @@ const getLevelProgress = (exp) => {
   }
   return { level: 100, progress: 0, requiredExp: 0 };
 };
-const getBadgeName = (level) => level >= 100 ? 'Demon King' : LEVEL_NAMES[Math.min(level - 1, 9)];
-const getUnlockedBadges = (level) => Array.from({ length: level }, (_, index) => ({ level: index + 1, name: getBadgeName(index + 1), icon: index + 1 >= 100 ? '👹' : '🏅', color: 'bg-blue-100 text-blue-800' }));
-const getNextBadge = (level) => level >= 100 ? null : { level: level + 1, name: getBadgeName(level + 1) };
+const getBadge = (level) => level >= 100
+  ? { level: 100, name: 'Demon King', icon: '👹', color: 'bg-red-100 text-red-900' }
+  : { level, ...LEVEL_BADGES[Math.min(level - 1, 9)] };
+const getUnlockedBadges = (level) => Array.from({ length: level }, (_, index) => getBadge(index + 1));
+const getNextBadge = (level) => level >= 100 ? null : getBadge(level + 1);
 
 const Card = ({ children, className = '' }) => (
   <div className={`bg-white rounded-2xl border border-slate-200 shadow-sm p-6 ${className}`}>
@@ -48,9 +50,12 @@ const Card = ({ children, className = '' }) => (
 );
 
 export function StudentView({ user, allTasks, completions, currentView, setCurrentView, nextDeadlineId, onAwardExp, db, appId, showToast, users }) {
+  const [showAllBadges, setShowAllBadges] = useState(false);
+
   return (
     <>
-      {currentView === 'dashboard' && <StudentDashboard user={user} allTasks={allTasks} completions={completions} nextDeadlineId={nextDeadlineId} setCurrentView={setCurrentView} />}
+      {currentView === 'dashboard' && <StudentDashboard user={user} allTasks={allTasks} completions={completions} nextDeadlineId={nextDeadlineId} setCurrentView={setCurrentView} onSeeAllBadges={() => setShowAllBadges(true)} />}
+      {showAllBadges && <AllBadgesModal exp={user.exp} onClose={() => setShowAllBadges(false)} />}
       {currentView === 'study' && <StudyCare onAwardExp={onAwardExp} />}
       {currentView === 'todo' && <TodoList user={user} allTasksList={allTasks} completions={completions} onComplete={(exp) => onAwardExp(exp, 'Task Completed')} db={db} appId={appId} showToast={showToast} highlightTaskId={nextDeadlineId} />}
       {currentView === 'leaderboard' && <Leaderboard users={users} currentUser={user} />}
@@ -59,7 +64,7 @@ export function StudentView({ user, allTasks, completions, currentView, setCurre
   );
 }
 
-function StudentDashboard({ user, allTasks, completions, nextDeadlineId, setCurrentView }) {
+function StudentDashboard({ user, allTasks, completions, nextDeadlineId, setCurrentView, onSeeAllBadges }) {
   const { level, progress, requiredExp } = getLevelProgress(user.exp);
   const badges = getUnlockedBadges(level);
   const nextBadge = getNextBadge(level);
@@ -153,7 +158,66 @@ function StudentDashboard({ user, allTasks, completions, nextDeadlineId, setCurr
           ))}
           {badges.length === 0 && <p className="text-slate-500 text-sm">Level up to earn your first badge!</p>}
         </div>
+        <div className="flex justify-end mt-4">
+          <button onClick={onSeeAllBadges} className="text-sm font-semibold text-blue-600 hover:text-blue-800 hover:underline">
+            See All Badges
+          </button>
+        </div>
       </Card>
+    </div>
+  );
+}
+
+function AllBadgesModal({ exp, onClose }) {
+  const level = getLevel(exp);
+  const badges = getUnlockedBadges(10);
+  const archmageBadge = badges[9];
+  const archmageUnlocked = level >= 10;
+  const demonKingBadge = getBadge(100);
+  const demonKingUnlocked = level >= 100;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onClick={onClose}>
+      <div className="w-full max-w-2xl max-h-[80vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="mb-5 flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900">All Badges</h2>
+            <p className="mt-1 text-sm text-slate-500">Unlocked {Math.min(level, 10)} of 10 badge ranks</p>
+          </div>
+          <button onClick={onClose} aria-label="Close badges" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><X size={20} /></button>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {badges.slice(0, 9).map(badge => {
+            const unlocked = level >= badge.level;
+            return (
+              <div key={badge.level} className={`flex items-center gap-3 rounded-xl border p-3 ${unlocked ? badge.color : 'border-slate-200 bg-slate-50 text-slate-400 grayscale'}`}>
+                <span className="text-2xl">{badge.icon}</span>
+                <div>
+                  <p className="text-xs font-semibold">Level {badge.level}</p>
+                  <p className="text-sm font-bold">{badge.name}</p>
+                  <p className="text-xs">{unlocked ? 'Unlocked' : 'Locked'}</p>
+                </div>
+              </div>
+            );
+          })}
+          <div className={`flex items-center gap-3 rounded-xl border p-3 ${archmageUnlocked ? archmageBadge.color : 'border-slate-200 bg-slate-50 text-slate-400 grayscale'}`}>
+            <span className="text-2xl">{archmageBadge.icon}</span>
+            <div>
+              <p className="text-xs font-semibold">Levels 10–99</p>
+              <p className="text-sm font-bold">{archmageBadge.name}</p>
+              <p className="text-xs">{archmageUnlocked ? 'Unlocked' : 'Locked'}</p>
+            </div>
+          </div>
+        </div>
+        <div className={`mt-5 flex items-center justify-center gap-5 rounded-2xl border-2 p-6 text-center ${demonKingUnlocked ? demonKingBadge.color : 'border-slate-200 bg-slate-50 text-slate-400 grayscale'}`}>
+          <span className="text-6xl">{demonKingBadge.icon}</span>
+          <div>
+            <p className="text-sm font-bold">Level 100 · Ultimate Secret Boss</p>
+            <p className="text-2xl font-black">{demonKingBadge.name}</p>
+            <p className="text-sm">{demonKingUnlocked ? 'Unlocked' : 'Locked'}</p>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

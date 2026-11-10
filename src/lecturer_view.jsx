@@ -381,7 +381,18 @@ function StudentProgress({ users, tasks, completions, db, appId, showToast }) {
   );
 }
 
-const LEVEL_NAMES = ['EXP Trainee', 'Focus Adventurer', 'Task Hunter', 'Time Weaver', 'Deadline Knight', 'Productivity Mage', 'Wisdom Conqueror', 'Master Strategist', 'EXP Overlord', 'Supreme Archmage of AdaptLearn'];
+const LEVEL_BADGES = [
+  { name: 'EXP Trainee', icon: '🎯', color: 'bg-yellow-100 text-yellow-800' },
+  { name: 'Focus Adventurer', icon: '🧭', color: 'bg-emerald-100 text-emerald-800' },
+  { name: 'Task Hunter', icon: '🏹', color: 'bg-teal-100 text-teal-800' },
+  { name: 'Time Weaver', icon: '⏳', color: 'bg-sky-100 text-sky-800' },
+  { name: 'Deadline Knight', icon: '🛡️', color: 'bg-indigo-100 text-indigo-800' },
+  { name: 'Productivity Mage', icon: '🧙‍♂️', color: 'bg-purple-100 text-purple-800' },
+  { name: 'Wisdom Conqueror', icon: '⚔️', color: 'bg-fuchsia-100 text-fuchsia-800' },
+  { name: 'Master Strategist', icon: '♟️', color: 'bg-amber-100 text-amber-800' },
+  { name: 'EXP Overlord', icon: '💎', color: 'bg-cyan-100 text-cyan-800' },
+  { name: 'Supreme Archmage of AdaptLearn', icon: '👑', color: 'bg-rose-100 text-rose-800' },
+];
 const getLevel = (exp) => {
   let level = 1;
   let remainingExp = Math.max(0, exp);
@@ -393,8 +404,10 @@ const getLevel = (exp) => {
   }
   return level;
 };
-const getBadgeName = (level) => level >= 100 ? 'Demon King' : LEVEL_NAMES[Math.min(level - 1, 9)];
-const getUnlockedBadges = (level) => Array.from({ length: level }, (_, index) => ({ level: index + 1, name: getBadgeName(index + 1), icon: index + 1 >= 100 ? '👹' : '🏅', color: 'bg-blue-100 text-blue-800' }));
+const getBadge = (level) => level >= 100
+  ? { level: 100, name: 'Demon King', icon: '👹👑', color: 'bg-red-100 text-red-900' }
+  : { level, ...LEVEL_BADGES[Math.min(level - 1, 9)] };
+const getUnlockedBadges = (level) => Array.from({ length: level }, (_, index) => getBadge(index + 1));
 
 function Leaderboard({ users, currentUser }) {
   const students = users.filter(u => u.role === 'student').sort((a, b) => b.exp - a.exp);
