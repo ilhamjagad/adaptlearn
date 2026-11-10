@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from "firebase/app";
 import { getAuth, onAuthStateChanged, signInWithCustomToken, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification } from "firebase/auth";
-import { getFirestore, collection, onSnapshot, doc, updateDoc, setDoc, getDoc, query, where, getDocs } from "firebase/firestore";
+import { getFirestore, collection, onSnapshot, doc, updateDoc, setDoc, getDoc, query, where, getDocs, addDoc } from "firebase/firestore";
+import { calculateBurnoutRisk } from './burnout';
 import { Clock, CheckSquare, Settings, Users, Trophy, LayoutDashboard, LogOut, Menu, X, UserRound, BookOpen } from 'lucide-react';
 import { LoginView } from './login_view';
 import { StudentView } from './student_view';
@@ -41,6 +42,8 @@ export default function AdaptLearn() {
   const [allUsers, setAllUsers] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [completions, setCompletions] = useState([]);
+  const [studySessions, setStudySessions] = useState([]);
+  const [studyBreakLocked, setStudyBreakLocked] = useState(false);
   const [currentView, setCurrentView] = useState('dashboard');
   const [toast, setToast] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -69,6 +72,7 @@ export default function AdaptLearn() {
         setAllUsers([]);
         setTasks([]);
         setCompletions([]);
+        setStudySessions([]);
       }
       setLoading(false);
     });
@@ -81,6 +85,7 @@ export default function AdaptLearn() {
     const usersRef = collection(db, 'artifacts', appId, 'public', 'data', 'users');
     const tasksRef = collection(db, 'artifacts', appId, 'public', 'data', 'tasks');
     const completionsRef = collection(db, 'artifacts', appId, 'public', 'data', 'completions');
+    const studySessionsRef = collection(db, 'artifacts', appId, 'public', 'data', 'studySessions');
 
     const unsubUsers = onSnapshot(usersRef, (snap) => {
       const uData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -98,10 +103,15 @@ export default function AdaptLearn() {
       setCompletions(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     }, (err) => console.error("Error fetching completions:", err));
 
+    const unsubStudySessions = onSnapshot(studySessionsRef, (snap) => {
+      setStudySessions(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err) => console.error("Error fetching study sessions:", err));
+
     return () => {
       unsubUsers();
       unsubTasks();
       unsubCompletions();
+      unsubStudySessions();
     };
   }, [user]);
 
@@ -196,6 +206,10 @@ export default function AdaptLearn() {
     throw new Error('Verification email sent. Please verify your email before signing in.');
   };
 
+  const addStudySession = async (session) => {
+    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'studySessions'), session);
+  };
+
   const addExp = async (amount, reason) => {
     if (!user || !dbUser || dbUser.role !== 'student') return;
     const newExp = dbUser.exp + amount;
@@ -257,7 +271,7 @@ export default function AdaptLearn() {
           {dbUser?.role === 'student' ? (
             <>
               <NavItem icon={<LayoutDashboard size={20} />} label="Dashboard" isActive={currentView === 'dashboard'} onClick={() => { setCurrentView('dashboard'); setSidebarOpen(false); }} />
-              <NavItem icon={<Clock size={20} />} label="Study Care" isActive={currentView === 'study'} onClick={() => { setCurrentView('study'); setSidebarOpen(false); }} />
+              <NavItem icon={<Clock size={20} />} label={studyBreakLocked ? 'Study Care (Break)' : 'Study Care'} isActive={currentView === 'study'} onClick={() => { setCurrentView('study'); setSidebarOpen(false); }} />
               <NavItem icon={<CheckSquare size={20} />} label="To-Do List" isActive={currentView === 'todo'} onClick={() => { setCurrentView('todo'); setSidebarOpen(false); }} />
               <NavItem icon={<BookOpen size={20} />} label="Courses" isActive={currentView === 'courses'} onClick={() => { setCurrentView('courses'); setSidebarOpen(false); }} />
               <NavItem icon={<Trophy size={20} />} label="Leaderboard" isActive={currentView === 'leaderboard'} onClick={() => { setCurrentView('leaderboard'); setSidebarOpen(false); }} />
@@ -316,6 +330,9 @@ export default function AdaptLearn() {
               user={dbUser} 
               allTasks={tasks} 
               completions={completions} 
+              studySessions={studySessions}
+              onStudySessionComplete={addStudySession}
+              onBreakLockChange={setStudyBreakLocked}
               currentView={currentView} 
               setCurrentView={setCurrentView}
               nextDeadlineId={nextDeadline?.id}
@@ -324,6 +341,7 @@ export default function AdaptLearn() {
               appId={appId} 
               showToast={showToast} 
               users={allUsers}
+              burnout={calculateBurnoutRisk(dbUser, tasks, completions, studySessions)}
             />
           )}
           
@@ -332,6 +350,7 @@ export default function AdaptLearn() {
               user={dbUser} 
               tasks={tasks} 
               completions={completions} 
+              studySessions={studySessions}
               currentView={currentView} 
               db={db} 
               appId={appId} 

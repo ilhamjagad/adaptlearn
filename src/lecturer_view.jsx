@@ -3,6 +3,8 @@ import { Clock, CheckSquare, Users, Plus, Trophy, Edit2, Trash2, Save, X, Paperc
 import { doc, deleteDoc, updateDoc, collection, addDoc } from 'firebase/firestore';
 import emailjs from '@emailjs/browser';
 
+import { calculateBurnoutRisk as burnoutRiskUtil } from './burnout';
+
 const emailJsConfig = {
   serviceId: import.meta.env.VITE_EMAILJS_SERVICE_ID,
   templateId: import.meta.env.VITE_EMAILJS_TEMPLATE_ID,
@@ -15,10 +17,10 @@ const Card = ({ children, className = '' }) => (
   </div>
 );
 
-export function LecturerView({ user, tasks, completions, currentView, db, appId, showToast, users }) {
+export function LecturerView({ user, tasks, completions, studySessions, currentView, db, appId, showToast, users }) {
   return (
     <>
-      {currentView === 'dashboard' && <LecturerDashboard users={users} tasks={tasks} />}
+      {currentView === 'dashboard' && <LecturerDashboard users={users} tasks={tasks} completions={completions} studySessions={studySessions} />}
       {currentView === 'tasks' && <TaskManagement db={db} appId={appId} tasks={tasks} lecturerId={user.id} showToast={showToast} students={users.filter(u => u.role === 'student' && u.email)} />}
       {currentView === 'progress' && <StudentProgress users={users} tasks={tasks} completions={completions} db={db} appId={appId} showToast={showToast} />}
       {currentView === 'leaderboard' && <Leaderboard users={users} currentUser={user} />}
@@ -26,7 +28,77 @@ export function LecturerView({ user, tasks, completions, currentView, db, appId,
   );
 }
 
-function LecturerDashboard({ users, tasks }) {
+function calculateBurnoutRisk(user, tasks, completions, studySessions) {
+  const now = Date.now();
+  const userCompletions = completions.filter(completion => completion.userId === user.id && completion.completedAt);
+  const assignedTasks = tasks.filter(task => task.type === 'global' || task.ownerId === user.id);
+  const overdueCount = assignedTasks.filter(task => !userCompletions.some(completion => completion.taskId === task.id) && new Date(task.deadline).getTime() < now).length;
+  const dueSoonOrLateCount = userCompletions.filter(completion => {
+    const task = assignedTasks.find(item => item.id === completion.taskId);
+    if (!task) return false;
+    const deadline = new Date(task.deadline).getTime();
+    return deadline - new Date(completion.completedAt).getTime() <= 24 * 60 * 60 * 1000;
+  }).length + overdueCount;
+  const procrastinationRate = assignedTasks.length ? dueSoonOrLateCount / assignedTasks.length : 0;
+  const procrastination = procrastinationRate > 0.6 ? 100 : 0;
+
+  const recentSessions = studySessions.filter(session => session.userId === user.id && session.completedAt && now - new Date(session.completedAt).getTime() <= 7 * 24 * 60 * 60 * 1000);
+  const dailyStudyMinutes = new Map();
+  let lateNightSessions = 0;
+  recentSessions.forEach(session => {
+    const date = new Date(session.completedAt);
+    const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(date);
+    dailyStudyMinutes.set(day, (dailyStudyMinutes.get(day) || 0) + Number(session.durationMinutes || 0));
+    const hour = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Jakarta', hour: '2-digit', hourCycle: 'h23' }).format(date));
+    const minute = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Jakarta', minute: '2-digit' }).format(date));
+    if (hour < 4 || (hour === 4 && minute <= 30)) lateNightSessions += 1;
+  });
+  const studyIntensity = [...dailyStudyMinutes.values()].some(minutes => minutes > 300) ? 100 : 0;
+  const lateNightRate = recentSessions.length ? lateNightSessions / recentSessions.length : 0;
+  const lateNight = lateNightRate >= 0.5 ? 100 : lateNightRate > 0 ? 50 : 0;
+
+  const currentWeekStart = now - 7 * 24 * 60 * 60 * 1000;
+  const previousWeekStart = now - 14 * 24 * 60 * 60 * 1000;
+  const currentWeekCount = userCompletions.filter(c => new Date(c.completedAt).getTime() >= currentWeekStart).length;
+  const previousWeekCount = userCompletions.filter(c => {
+    const timestamp = new Date(c.completedAt).getTime();
+    return timestamp >= previousWeekStart && timestamp < currentWeekStart;
+  }).length;
+  const activityDrop = previousWeekCount > 0 && currentWeekCount < previousWeekCount * 0.5 ? 20 : 0;
+  const score = Math.min(100, Math.round(procrastination * 0.35 + studyIntensity * 0.35 + lateNight * 0.3 + activityDrop));
+  const triggers = [
+    ...(procrastination ? ['Over 60% of assignments completed close to or after their deadlines'] : []),
+    ...(studyIntensity ? ['Study Care exceeded 5 hours in one day'] : []),
+    ...(lateNight ? ['Late-night study sessions detected (00:00–04:30 WIB)'] : []),
+    ...(activityDrop ? ['Task completion activity dropped by over 50% compared with the previous week'] : []),
+  ];
+
+  return { score, triggers };
+}
+
+function LecturerBurnoutMonitor({ students }) {
+  return (
+    <Card>
+      <h2 className="text-xl font-bold text-slate-800 mb-4">Student Well-being Monitor</h2>
+      {!students.length ? <p className="text-sm text-slate-500">No students currently show moderate or high risk indicators.</p> : (
+        <div className="space-y-3">
+          {students.map(({ student, risk }) => (
+            <div key={student.id} className={`flex items-center justify-between gap-4 rounded-xl p-4 ${risk.score >= 60 ? 'bg-red-50 text-red-800' : 'bg-amber-50 text-amber-800'}`}>
+              <div><p className="font-semibold">{student.name}</p><p className="text-sm">{risk.score >= 60 ? 'High (Burnout Indicated)' : 'Moderate (At Risk)'}</p></div>
+              <span className="text-xl font-bold">{risk.score}/100</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function LecturerDashboard({ users, tasks, completions, studySessions }) {
+  const burnoutStudents = users.filter(student => student.role === 'student').map(student => ({
+    student,
+    risk: burnoutRiskUtil(student, tasks, completions, studySessions),
+  })).filter(entry => entry.risk.score >= 30).sort((a, b) => b.risk.score - a.risk.score);
   const studentsCount = users.filter(u => u.role === 'student').length;
   const globalTasksCount = tasks.filter(t => t.type === 'global').length;
 
@@ -54,6 +126,7 @@ function LecturerDashboard({ users, tasks }) {
           <p className="text-4xl font-bold">{globalTasksCount}</p>
         </Card>
       </div>
+      <LecturerBurnoutMonitor students={burnoutStudents} />
     </div>
   );
 }

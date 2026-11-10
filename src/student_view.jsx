@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Clock, Bell, Trophy, BookOpen, Play, CheckSquare, Settings, Award, Square, Gamepad2, Plus, Paperclip, Link as LinkIcon, FileText, Image, Upload, X } from 'lucide-react';
 import { collection, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { calculateBurnoutRisk } from './burnout';
 
 const LEVEL_BADGES = [
   { name: 'EXP Trainee', icon: '🎯', color: 'bg-yellow-100 text-yellow-800' },
@@ -53,14 +54,19 @@ const Card = ({ children, className = '' }) => (
   </div>
 );
 
-export function StudentView({ user, allTasks, completions, currentView, setCurrentView, nextDeadlineId, onAwardExp, db, appId, showToast, users }) {
+export function StudentView({ user, allTasks, completions, studySessions, currentView, setCurrentView, nextDeadlineId, onAwardExp, onStudySessionComplete, onBreakLockChange, burnout, db, appId, showToast, users }) {
   const [showAllBadges, setShowAllBadges] = useState(false);
+  const [energy, setEnergy] = useState(() => Number(localStorage.getItem(`energy_${user.id}`) ?? 100));
+
+  useEffect(() => {
+    localStorage.setItem(`energy_${user.id}`, String(energy));
+  }, [user.id, energy]);
 
   return (
     <>
-      {currentView === 'dashboard' && <StudentDashboard user={user} allTasks={allTasks} completions={completions} nextDeadlineId={nextDeadlineId} setCurrentView={setCurrentView} onSeeAllBadges={() => setShowAllBadges(true)} />}
+      {currentView === 'dashboard' && <StudentDashboard user={user} allTasks={allTasks} completions={completions} energy={energy} studySessions={studySessions} burnout={burnout || calculateBurnoutRisk(user, allTasks, completions, studySessions)} nextDeadlineId={nextDeadlineId} setCurrentView={setCurrentView} onSeeAllBadges={() => setShowAllBadges(true)} />}
       {showAllBadges && <AllBadgesModal exp={user.exp} onClose={() => setShowAllBadges(false)} />}
-      {currentView === 'study' && <StudyCare onAwardExp={onAwardExp} />}
+      {currentView === 'study' && <StudyCare user={user} db={db} appId={appId} showToast={showToast} onAwardExp={onAwardExp} onStudySessionComplete={onStudySessionComplete} onBreakLockChange={onBreakLockChange} burnout={burnout || calculateBurnoutRisk(user, allTasks, completions, studySessions)} energy={energy} setEnergy={setEnergy} />}
       {currentView === 'todo' && <TodoList user={user} allTasksList={allTasks} completions={completions} onComplete={(exp) => onAwardExp(exp, 'Task Completed')} db={db} appId={appId} showToast={showToast} highlightTaskId={nextDeadlineId} />}
       {currentView === 'leaderboard' && <Leaderboard users={users} currentUser={user} />}
       {currentView === 'courses' && <Courses user={user} />}
@@ -69,7 +75,7 @@ export function StudentView({ user, allTasks, completions, currentView, setCurre
   );
 }
 
-function StudentDashboard({ user, allTasks, completions, nextDeadlineId, setCurrentView, onSeeAllBadges }) {
+function StudentDashboard({ user, allTasks, completions, energy, studySessions, burnout, nextDeadlineId, setCurrentView, onSeeAllBadges }) {
   const { level, progress, requiredExp } = getLevelProgress(user.exp);
   const badges = getUnlockedBadges(level);
   const nextBadge = getNextBadge(level);
@@ -85,6 +91,7 @@ function StudentDashboard({ user, allTasks, completions, nextDeadlineId, setCurr
         <h1 className="text-3xl font-bold text-slate-900">Welcome back, {user.name}!</h1>
         <p className="text-slate-500 mt-1">Ready to earn some EXP today?</p>
       </div>
+      <EnergyBar energy={energy} />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="md:col-span-2 bg-gradient-to-br from-blue-600 to-blue-900 text-white border-none relative overflow-hidden">
@@ -149,6 +156,8 @@ function StudentDashboard({ user, allTasks, completions, nextDeadlineId, setCurr
         </Card>
       </div>
 
+      <BurnoutStatusCard risk={burnout} />
+
       <Card>
         <h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2">
           <Trophy size={20} className="text-yellow-500" />
@@ -170,6 +179,25 @@ function StudentDashboard({ user, allTasks, completions, nextDeadlineId, setCurr
         </div>
       </Card>
     </div>
+  );
+}
+
+function BurnoutStatusCard({ risk }) {
+  const styles = risk.color === 'red' ? 'border-red-200 bg-red-50 text-red-900' : risk.color === 'amber' ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-emerald-200 bg-emerald-50 text-emerald-900';
+  const recommendation = risk.score >= 60 ? 'Please take a break, rest, and contact your lecturer or student support if you need help.' : risk.score >= 30 ? 'Consider spreading study sessions and starting assignments earlier.' : 'Your recent study pattern looks balanced. Keep taking regular breaks.';
+
+  return (
+    <Card className={`border ${styles}`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-bold">Well-being: {risk.status}</h2>
+          <p className="mt-1 text-sm">Burnout risk score: {risk.score}/100</p>
+        </div>
+        <span className="text-2xl font-black">{risk.score}</span>
+      </div>
+      <p className="mt-3 text-sm">{recommendation}</p>
+      {risk.triggers.length > 0 && <ul className="mt-3 list-disc space-y-1 pl-5 text-sm">{risk.triggers.map(trigger => <li key={trigger}>{trigger}</li>)}</ul>}
+    </Card>
   );
 }
 
@@ -227,25 +255,67 @@ function AllBadgesModal({ exp, onClose }) {
   );
 }
 
-function StudyCare({ onAwardExp }) {
+function EnergyBar({ energy }) {
+  const color = energy > 60 ? 'bg-emerald-500' : energy > 30 ? 'bg-amber-500' : 'bg-red-500';
+  return (
+    <div className="w-full max-w-xl text-left">
+      <div className="mb-1 flex justify-between text-sm font-semibold text-slate-700"><span>Energy</span><span>{energy}%</span></div>
+      <div className="h-3 overflow-hidden rounded-full bg-slate-200"><div className={`h-full ${color} transition-all duration-500`} style={{ width: `${energy}%` }} /></div>
+    </div>
+  );
+}
+
+function StudyCare({ user, db, appId, showToast, burnout, energy, setEnergy, onAwardExp, onStudySessionComplete, onBreakLockChange }) {
   const [minutes, setMinutes] = useState(25);
   const [timeLeft, setTimeLeft] = useState(25 * 60);
   const [isActive, setIsActive] = useState(false);
   const [mode, setMode] = useState('setup');
+  const [breakSecondsLeft, setBreakSecondsLeft] = useState(0);
+  const [isForcedBreak, setIsForcedBreak] = useState(false);
+  const [sessionStartedAt, setSessionStartedAt] = useState(null);
+  const risk = burnout || { score: 0, status: 'Low Risk' };
 
   useEffect(() => {
-    let interval = null;
+    if (mode !== 'break' || breakSecondsLeft <= 0) return undefined;
+    const interval = setInterval(() => setBreakSecondsLeft(seconds => Math.max(0, seconds - 1)), 1000);
+    return () => clearInterval(interval);
+  }, [mode, breakSecondsLeft]);
+
+  useEffect(() => {
+    if (mode === 'break' && breakSecondsLeft === 0) {
+      onBreakLockChange?.(false);
+      setMode('setup');
+    }
+  }, [mode, breakSecondsLeft, onBreakLockChange]);
+
+  useEffect(() => {
+    let interval;
     if (isActive && timeLeft > 0) {
-      interval = setInterval(() => setTimeLeft(t => t - 1), 1000);
-    } else if (isActive && timeLeft === 0) {
+      interval = setInterval(() => {
+        setTimeLeft(current => Math.max(0, current - 1));
+        setEnergy(current => Math.max(0, current - 1));
+      }, 1000);
+    } else if (!isActive && mode === 'break' && breakSecondsLeft > 0) {
+      interval = setInterval(() => setEnergy(current => Math.min(100, current + 2)), 1000);
+    }
+    return () => clearInterval(interval);
+  }, [isActive, timeLeft, mode, breakSecondsLeft]);
+
+  useEffect(() => {
+    if (isActive && timeLeft === 0) {
       setIsActive(false);
       handleSessionComplete();
     }
-    return () => clearInterval(interval);
   }, [isActive, timeLeft]);
 
   const startTimer = () => {
-    setTimeLeft(minutes * 60);
+    const sessionMinutes = risk?.score >= 60 ? Math.min(minutes, 45) : minutes;
+    if (sessionMinutes !== minutes) {
+      showToast?.('High burnout risk: focus sessions are limited to 45 minutes.');
+      setMinutes(sessionMinutes);
+    }
+    setSessionStartedAt(new Date().toISOString());
+    setTimeLeft(sessionMinutes * 60);
     setIsActive(true);
     setMode('study');
   };
@@ -258,8 +328,25 @@ function StudyCare({ onAwardExp }) {
     setMode('setup');
   };
 
-  const handleSessionComplete = () => {
+  const handleSessionComplete = async () => {
+    const completedAt = new Date().toISOString();
     onAwardExp(minutes, `Completed ${minutes}m study session`);
+    await onStudySessionComplete?.({
+      userId: user.id,
+      durationMinutes: minutes,
+      startedAt: sessionStartedAt || completedAt,
+      completedAt,
+    });
+    const updatedRisk = calculateBurnoutRisk(user, [], [], [{ userId: user.id, durationMinutes: minutes, completedAt }]);
+    setRisk(updatedRisk);
+    if (updatedRisk.score >= 60) {
+      setIsForcedBreak(true);
+      setBreakSecondsLeft(15 * 60);
+      onBreakLockChange?.(true);
+    } else {
+      setIsForcedBreak(false);
+      setBreakSecondsLeft(0);
+    }
     setMode('break');
   };
 
@@ -284,6 +371,8 @@ function StudyCare({ onAwardExp }) {
                 <Clock size={40} className="text-blue-600" />
               </div>
               <h2 className="text-2xl font-bold text-slate-800">Set Target Time</h2>
+              <EnergyBar energy={energy} />
+              {risk.score >= 60 && <p className="text-sm font-semibold text-red-700">High burnout risk detected. Limit your study session to 45 minutes and take a 15-minute break.</p>}
               <div className="flex items-center justify-center gap-4">
                 {[15, 25, 30, 45, 60].map(m => (
                   <button
@@ -301,7 +390,8 @@ function StudyCare({ onAwardExp }) {
               </button>
             </div>
           ) : (
-            <div className="space-y-8">
+              <div className="space-y-8">
+              <EnergyBar energy={energy} />
               <div className="relative w-64 h-64 mx-auto">
                 <svg className="w-full h-full transform -rotate-90">
                   <circle cx="128" cy="128" r="120" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-slate-100" />
@@ -337,21 +427,21 @@ function StudyCare({ onAwardExp }) {
       )}
 
       {mode === 'break' && (
-        <Card className="text-center p-8 bg-white border-blue-100">
+        <Card className={`text-center p-8 ${isForcedBreak ? 'bg-amber-50 border-amber-200' : 'bg-white border-blue-100'}`}>
           <div className="inline-flex items-center justify-center w-16 h-16 bg-teal-100 text-teal-600 rounded-full mb-4">
             <Gamepad2 size={32} />
           </div>
-          <h2 className="text-2xl font-bold text-slate-800 mb-2">Great Job! Time for a Break.</h2>
-          <p className="text-slate-600 mb-8">You earned {minutes} EXP. Rest your mind before the next session.</p>
+          <h2 className="text-2xl font-bold text-slate-800 mb-2">{isForcedBreak ? 'Recovery Break Required' : 'Great Job! Time for a Break.'}</h2>
+          <p className="text-slate-600 mb-4">{isForcedBreak ? 'High burnout risk detected. Please rest before continuing.' : `You earned ${minutes} EXP. Rest your mind before the next session.`}</p>
+          {isForcedBreak && <p className="mb-6 text-3xl font-bold text-amber-800">{formatTime(breakSecondsLeft)}</p>}
           
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 max-w-sm mx-auto mb-8">
             <h3 className="font-bold text-slate-700 mb-4">Mini-Game: Tic-Tac-Toe</h3>
             <TicTacToe />
           </div>
 
-          <button onClick={resetTimer} className="px-8 py-3 bg-teal-600 text-white font-bold rounded-full hover:bg-teal-700 transition-colors">
-            End Break & Return
-          </button>
+          {!isForcedBreak && <button onClick={resetTimer} className="px-8 py-3 bg-teal-600 text-white font-bold rounded-full hover:bg-teal-700 transition-colors">End Break & Return</button>}
+          {isForcedBreak && <p className="text-sm font-medium text-amber-800">Study Care unlocks when the 15-minute break is complete.</p>}
         </Card>
       )}
     </div>
