@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { initializeApp } from "firebase/app";
 import { getAuth, onAuthStateChanged, signInWithCustomToken, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification } from "firebase/auth";
 import { getFirestore, collection, onSnapshot, doc, updateDoc, setDoc, getDoc, query, where, getDocs } from "firebase/firestore";
-import { Clock, CheckSquare, Settings, Users, Trophy, LayoutDashboard, LogOut, Menu, X, UserRound } from 'lucide-react';
+import { Clock, CheckSquare, Settings, Users, Trophy, LayoutDashboard, LogOut, Menu, X, UserRound, BookOpen } from 'lucide-react';
 import { LoginView } from './login_view';
 import { StudentView } from './student_view';
 import { LecturerView } from './lecturer_view';
@@ -259,6 +259,7 @@ export default function AdaptLearn() {
               <NavItem icon={<LayoutDashboard size={20} />} label="Dashboard" isActive={currentView === 'dashboard'} onClick={() => { setCurrentView('dashboard'); setSidebarOpen(false); }} />
               <NavItem icon={<Clock size={20} />} label="Study Care" isActive={currentView === 'study'} onClick={() => { setCurrentView('study'); setSidebarOpen(false); }} />
               <NavItem icon={<CheckSquare size={20} />} label="To-Do List" isActive={currentView === 'todo'} onClick={() => { setCurrentView('todo'); setSidebarOpen(false); }} />
+              <NavItem icon={<BookOpen size={20} />} label="Courses" isActive={currentView === 'courses'} onClick={() => { setCurrentView('courses'); setSidebarOpen(false); }} />
               <NavItem icon={<Trophy size={20} />} label="Leaderboard" isActive={currentView === 'leaderboard'} onClick={() => { setCurrentView('leaderboard'); setSidebarOpen(false); }} />
               <NavItem icon={<Settings size={20} />} label="Settings" isActive={currentView === 'settings'} onClick={() => { setCurrentView('settings'); setSidebarOpen(false); }} />
             </>

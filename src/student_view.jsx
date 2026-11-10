@@ -63,6 +63,7 @@ export function StudentView({ user, allTasks, completions, currentView, setCurre
       {currentView === 'study' && <StudyCare onAwardExp={onAwardExp} />}
       {currentView === 'todo' && <TodoList user={user} allTasksList={allTasks} completions={completions} onComplete={(exp) => onAwardExp(exp, 'Task Completed')} db={db} appId={appId} showToast={showToast} highlightTaskId={nextDeadlineId} />}
       {currentView === 'leaderboard' && <Leaderboard users={users} currentUser={user} />}
+      {currentView === 'courses' && <Courses user={user} />}
       {currentView === 'settings' && <StudentSettings user={user} db={db} appId={appId} showToast={showToast} />}
     </>
   );
@@ -758,6 +759,123 @@ function Leaderboard({ users, currentUser }) {
         </div>
       </Card>
     </div>
+  );
+}
+
+function Courses({ user }) {
+  return (
+    <div className="space-y-6 animate-fade-in">
+      <div>
+        <h1 className="text-3xl font-bold text-slate-900">Courses</h1>
+        <p className="text-slate-500 mt-1">Browse and access your course materials</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <CourseCard
+          title="Data Structures and Algorithms"
+          description="Learn fundamental data structures and algorithms for problem solving."
+          icon="📚"
+          materials={[
+            { type: 'document', title: 'Introduction to Data Structures', url: '#' },
+            { type: 'video', title: 'Arrays and Linked Lists', url: '#' },
+            { type: 'document', title: 'Trees and Graphs', url: '#' },
+            { type: 'video', title: 'Sorting Algorithms', url: '#' },
+          ]}
+        />
+        <CourseCard
+          title="Calculus II"
+          description="Advanced calculus concepts including integration techniques and series."
+          icon="📐"
+          materials={[
+            { type: 'document', title: 'Integration Techniques', url: '#' },
+            { type: 'video', title: 'Series and Sequences', url: '#' },
+            { type: 'document', title: 'Polar Coordinates', url: '#' },
+          ]}
+        />
+        <CourseCard
+          title="Software Engineering"
+          description="Software development methodologies and best practices."
+          icon="💻"
+          materials={[
+            { type: 'document', title: 'Software Development Life Cycle', url: '#' },
+            { type: 'video', title: 'Design Patterns', url: '#' },
+            { type: 'document', title: 'Testing Strategies', url: '#' },
+          ]}
+        />
+        <CourseCard
+          title="English"
+          description="Academic English for computer science and technology."
+          icon="📝"
+          materials={[
+            { type: 'document', title: 'Technical Writing', url: '#' },
+            { type: 'video', title: 'Presentation Skills', url: '#' },
+            { type: 'document', title: 'Technical Vocabulary', url: '#' },
+          ]}
+        />
+        <CourseCard
+          title="Computer Organization and Architecture"
+          description="Computer hardware organization and architecture principles."
+          icon="🖥️"
+          materials={[
+            { type: 'document', title: 'CPU Architecture', url: '#' },
+            { type: 'video', title: 'Memory Hierarchy', url: '#' },
+            { type: 'document', title: 'Instruction Sets', url: '#' },
+          ]}
+        />
+        <CourseCard
+          title="Computer Networks"
+          description="Network protocols, architectures, and communication systems."
+          icon="🌐"
+          materials={[
+            { type: 'document', title: 'Network Protocols', url: '#' },
+            { type: 'video', title: 'TCP/IP Model', url: '#' },
+            { type: 'document', title: 'Network Security', url: '#' },
+          ]}
+        />
+        <CourseCard
+          title="Database Systems"
+          description="Database design, SQL, and database management systems."
+          icon="🗄️"
+          materials={[
+            { type: 'document', title: 'Relational Model', url: '#' },
+            { type: 'video', title: 'SQL Queries', url: '#' },
+            { type: 'document', title: 'Normalization', url: '#' },
+          ]}
+        />
+      </div>
+    </div>
+  );
+}
+
+function CourseCard({ title, description, icon, materials }) {
+  return (
+    <Card className="p-6 hover:shadow-lg transition-shadow">
+      <div className="flex items-start gap-4 mb-4">
+        <div className="w-14 h-14 bg-blue-100 rounded-xl flex items-center justify-center text-3xl">
+          {icon}
+        </div>
+        <div>
+          <h3 className="text-lg font-bold text-slate-900">{title}</h3>
+          <p className="text-sm text-slate-500 mt-1">{description}</p>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {materials.map((material, index) => (
+          <a
+            key={index}
+            href={material.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"
+          >
+            <span className="text-lg">
+              {material.type === 'document' ? '📄' : material.type === 'video' ? '🎥' : '🔗'}
+            </span>
+            <span className="text-sm font-medium text-slate-700">{material.title}</span>
+          </a>
+        ))}
+      </div>
+    </Card>
   );
 }
 
