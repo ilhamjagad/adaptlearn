@@ -50,6 +50,11 @@ export function LoginView({ onLogin, onRegister, onForgotPassword }) {
         return;
       }
 
+      if (!/^[A-Z][a-z]+(?: [A-Z][a-z]+)+$/.test(fullName.trim())) {
+        setError('Enter your full name with each name capitalized, e.g. Ilham Jagad.');
+        return;
+      }
+
       if (!emailName.trim()) {
         setError('Bagian email wajib diisi.');
         return;
@@ -164,7 +169,7 @@ export function LoginView({ onLogin, onRegister, onForgotPassword }) {
               <>
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1.5">Full Name</label>
-                  <input type="text" required value={fullName} onChange={e => setFullName(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0057D9]" />
+                  <input type="text" required value={fullName} onChange={e => setFullName(e.target.value)} pattern="[A-Z][a-z]+( [A-Z][a-z]+)+" title="Use capitalized names separated by spaces, e.g. Ilham Jagad." className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0057D9]" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1.5">Student ID (NIM)</label>
