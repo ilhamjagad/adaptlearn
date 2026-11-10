@@ -1,6 +1,13 @@
 import React, { useState } from 'react';
 import { Clock, CheckSquare, Users, Plus, Trophy, Edit2, Trash2, Save, X, Paperclip, Link as LinkIcon } from 'lucide-react';
 import { doc, deleteDoc, updateDoc, collection, addDoc } from 'firebase/firestore';
+import emailjs from '@emailjs/browser';
+
+const emailJsConfig = {
+  serviceId: import.meta.env.VITE_EMAILJS_SERVICE_ID,
+  templateId: import.meta.env.VITE_EMAILJS_TEMPLATE_ID,
+  publicKey: import.meta.env.VITE_EMAILJS_PUBLIC_KEY,
+};
 
 const Card = ({ children, className = '' }) => (
   <div className={`bg-white rounded-2xl border border-slate-200 shadow-sm p-6 ${className}`}>
@@ -12,7 +19,7 @@ export function LecturerView({ user, tasks, completions, currentView, db, appId,
   return (
     <>
       {currentView === 'dashboard' && <LecturerDashboard users={users} tasks={tasks} />}
-      {currentView === 'tasks' && <TaskManagement db={db} appId={appId} tasks={tasks} lecturerId={user.id} showToast={showToast} />}
+      {currentView === 'tasks' && <TaskManagement db={db} appId={appId} tasks={tasks} lecturerId={user.id} showToast={showToast} students={users.filter(u => u.role === 'student' && u.email)} />}
       {currentView === 'progress' && <StudentProgress users={users} tasks={tasks} completions={completions} db={db} appId={appId} showToast={showToast} />}
       {currentView === 'leaderboard' && <Leaderboard users={users} currentUser={user} />}
     </>
@@ -61,7 +68,7 @@ const COURSES = [
   'Database Systems',
 ];
 
-function TaskManagement({ db, appId, tasks, lecturerId, showToast }) {
+function TaskManagement({ db, appId, tasks, lecturerId, showToast, students }) {
   const [newTask, setNewTask] = useState({ title: '', description: '', deadline: '', resourceUrl: '', course: '' });
   const [attachment, setAttachment] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -91,6 +98,38 @@ function TaskManagement({ db, appId, tasks, lecturerId, showToast }) {
         createdBy: lecturerId,
         createdAt: new Date().toISOString()
       });
+
+      const { serviceId, templateId, publicKey } = emailJsConfig;
+      if (!serviceId || !templateId || !publicKey) {
+        throw new Error('Email notifications are not configured. Check the VITE_EMAILJS variables and restart the development server.');
+      }
+      if (!students.length) {
+        showToast('Assignment posted, but no verified student email addresses were found.');
+      } else {
+        const emailResults = await Promise.allSettled(students.map(student => emailjs.send(
+          serviceId,
+          templateId,
+          {
+            to_email: student.email,
+            email: student.email,
+            to_name: student.name,
+            name: student.name,
+            assignment_title: newTask.title,
+            course: newTask.course,
+            deadline: new Date(newTask.deadline).toLocaleDateString('en-GB'),
+            description: newTask.description,
+            resource_url: newTask.resourceUrl,
+          },
+          { publicKey }
+        )));
+        const failedEmails = emailResults.filter(result => result.status === 'rejected').length;
+        if (failedEmails) {
+          console.error('EmailJS send errors:', emailResults.filter(result => result.status === 'rejected'));
+          showToast(`${failedEmails} of ${students.length} notification email(s) failed. Check EmailJS configuration and template variables.`);
+        } else {
+          showToast(`Assignment posted and notification sent to ${students.length} student(s).`);
+        }
+      }
       
       setNewTask({ title: '', description: '', deadline: '', resourceUrl: '', course: '' });
       setAttachment(null);
