@@ -69,7 +69,7 @@ export function LoginView({ onLogin, onRegister, onForgotPassword }) {
       console.error("Auth action error:", err);
       let msg = err.message;
       if (msg.includes('invalid-credential') || msg.includes('user-not-found') || msg.includes('wrong-password')) {
-        msg = 'Student ID (NIM) or email is not registered, or the password is incorrect.';
+        msg = 'Incorrect password.';
       } else if (msg.includes('already registered') || msg.includes('email-already-in-use')) {
         msg = 'This Student ID (NIM) or email is already in use.';
       } else if (msg.includes('weak-password')) {
