@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from "firebase/app";
-import { getAuth, onAuthStateChanged, signInWithCustomToken, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
+import { getAuth, onAuthStateChanged, signInWithCustomToken, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification } from "firebase/auth";
 import { getFirestore, collection, onSnapshot, doc, updateDoc, setDoc, getDoc, query, where, getDocs } from "firebase/firestore";
 import { Clock, CheckSquare, Settings, Users, Trophy, LayoutDashboard, LogOut, Menu, X, UserRound } from 'lucide-react';
 import { LoginView } from './login_view';
@@ -154,6 +154,10 @@ export default function AdaptLearn() {
       email = snap.docs[0].data().email;
     }
     const credential = await signInWithEmailAndPassword(auth, email, password);
+    if (role === 'student' && !credential.user.emailVerified) {
+      await signOut(auth);
+      throw new Error('Please verify your email before signing in. Check your inbox for the verification link.');
+    }
     const profileSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', credential.user.uid));
     if (!profileSnap.exists() || profileSnap.data().role !== role) {
       await signOut(auth);
@@ -177,6 +181,7 @@ export default function AdaptLearn() {
     const nimSnapshot = await getDocs(nimQuery);
     if (!nimSnapshot.empty) throw new Error('This Student ID (NIM) is already registered.');
     const credential = await createUserWithEmailAndPassword(auth, email, password);
+    await sendEmailVerification(credential.user);
     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', credential.user.uid), {
       name,
       email,
@@ -184,8 +189,11 @@ export default function AdaptLearn() {
       role,
       exp: 0,
       emailNotifsEnabled: false,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      emailVerified: false
     });
+    await signOut(auth);
+    throw new Error('Verification email sent. Please verify your email before signing in.');
   };
 
   const addExp = async (amount, reason) => {

@@ -233,7 +233,7 @@ function StudentProgress({ users, tasks, completions, db, appId, showToast }) {
         <h2 className="text-xl font-bold text-slate-800 mb-4">Student List ({students.length})</h2>
         <div className="divide-y divide-slate-100">
           {students.length === 0 ? (
-            <p className="text-slate-500 italic py-4">Belum ada mahasiswa terdaftar.</p>
+            <p className="text-slate-500 italic py-4">No students are registered yet.</p>
           ) : (
             students.map(student => (
               <div key={student.id} className="py-3 flex items-center justify-between gap-4">

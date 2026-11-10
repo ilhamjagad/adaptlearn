@@ -724,7 +724,7 @@ function Leaderboard({ users, currentUser }) {
               const topBadge = badges[badges.length - 1];
 
               return (
-                <div key={student.id} className={`px-6 py-4 grid grid-cols-12 gap-4 items-center transition-colors hover:bg-slate-50 ${isMe ? 'bg-blue-50 text-blue-900' : ''}`}>
+                <div key={student.id} className={`px-6 py-4 grid grid-cols-12 gap-4 items-center transition-colors hover:bg-slate-50 ${getLevel(student.exp) >= 100 ? 'bg-red-100' : getLevel(student.exp) >= 10 ? 'bg-rose-100' : isMe ? 'bg-blue-50' : ''}`}>
                   <div className={`col-span-2 text-center ${rankStyle}`}>
                     #{rank}
                   </div>

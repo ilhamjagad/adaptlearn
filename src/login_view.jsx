@@ -39,9 +39,9 @@ export function LoginView({ onLogin, onRegister, onForgotPassword }) {
 
     // Password Validation for Registration
     if (isRegistering) {
-      const passwordRegex = /^(?=.*[A-Z])(?=.*\d).{6,}$/;
+      const passwordRegex = /^(?=.*[A-Z])(?=.*\d)[A-Za-z\d]{6,}$/;
       if (!passwordRegex.test(password)) {
-        setError('Password must be at least 6 characters and include at least 1 uppercase letter and 1 number.');
+        setError('Password must be at least 6 characters and include at least 1 uppercase letter and 1 number. Symbols are not allowed.');
         return;
       }
       
@@ -73,7 +73,11 @@ export function LoginView({ onLogin, onRegister, onForgotPassword }) {
     } catch (err) {
       console.error("Auth action error:", err);
       let msg = err.message;
-      if (msg.includes('invalid-credential') || msg.includes('user-not-found') || msg.includes('wrong-password')) {
+      if (msg.includes('Verification email sent')) {
+        msg = err.message;
+      } else if (msg.includes('Please verify your email')) {
+        msg = err.message;
+      } else if (msg.includes('invalid-credential') || msg.includes('user-not-found') || msg.includes('wrong-password')) {
         msg = 'Incorrect password.';
       } else if (msg.includes('already registered') || msg.includes('email-already-in-use')) {
         msg = 'This Student ID (NIM) or email is already in use.';
