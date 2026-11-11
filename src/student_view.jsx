@@ -70,6 +70,7 @@ export function StudentView({ user, allTasks, completions, studySessions, curren
       {currentView === 'todo' && <TodoList user={user} allTasksList={allTasks} completions={completions} onComplete={(exp) => onAwardExp(exp, 'Task Completed')} db={db} appId={appId} showToast={showToast} highlightTaskId={nextDeadlineId} />}
       {currentView === 'leaderboard' && <Leaderboard users={users} currentUser={user} />}
       {currentView === 'courses' && <Courses user={user} />}
+      {currentView === 'energy' && <GamifiedEnergy user={user} energy={energy} setEnergy={setEnergy} onAwardExp={onAwardExp} showToast={showToast} />}
       {currentView === 'settings' && <StudentSettings user={user} db={db} appId={appId} showToast={showToast} />}
     </>
   );
@@ -848,6 +849,81 @@ function Leaderboard({ users, currentUser }) {
           )}
         </div>
       </Card>
+    </div>
+  );
+}
+
+function GamifiedEnergy({ user, energy, setEnergy, onAwardExp, showToast }) {
+  const [game, setGame] = useState(null);
+  const [sequence, setSequence] = useState([]);
+  const [input, setInput] = useState([]);
+  const [litTile, setLitTile] = useState(null);
+  const [target, setTarget] = useState(0);
+  const [answer, setAnswer] = useState('');
+  const [locked, setLocked] = useState(false);
+  const energyFull = energy >= 100;
+
+  const finishGame = amount => {
+    setEnergy(value => Math.min(100, value + amount));
+    onAwardExp(amount, 'Completed an energy mini-game');
+    showToast?.(`Game complete: +${amount}% energy and +${amount} EXP.`);
+    setGame(null);
+  };
+
+  const startMemory = () => {
+    const tiles = Array.from({ length: 4 }, () => Math.floor(Math.random() * 4));
+    setSequence(tiles);
+    setInput([]);
+    setLocked(true);
+    setGame('memory');
+    tiles.forEach((tile, index) => setTimeout(() => {
+      setLitTile(tile);
+      setTimeout(() => {
+        setLitTile(null);
+        if (index === tiles.length - 1) setLocked(false);
+      }, 650);
+    }, index * 1000 + 300));
+  };
+
+  const chooseTile = tile => {
+    if (locked) return;
+    const next = [...input, tile];
+    setInput(next);
+    if (sequence[next.length - 1] !== tile) {
+      setLocked(true);
+      showToast?.('Incorrect sequence. Restarting game.');
+      setTimeout(startMemory, 800);
+    } else if (next.length === sequence.length) {
+      setLocked(true);
+      setTimeout(() => finishGame(15), 400);
+    }
+  };
+
+  const startMath = () => {
+    setTarget(Math.floor(Math.random() * 50) + 25);
+    setAnswer('');
+    setGame('math');
+  };
+
+  const checkMath = event => {
+    event.preventDefault();
+    if (Number(answer) === target * 2) finishGame(10);
+    else showToast?.('Incorrect answer. Try again.');
+  };
+
+  return (
+    <div className="w-full space-y-6 animate-fade-in">
+      <div><h1 className="text-3xl font-bold text-slate-900">Energy Recharge</h1><p className="mt-1 text-slate-500">Play a short brain game to restore energy and earn EXP.</p></div>
+      <Card>
+        <EnergyBar energy={energy} />
+        {energyFull && <p className="mt-4 text-sm font-semibold text-emerald-700">Energy is full. Spend some energy before playing again.</p>}
+        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+          <button disabled={energyFull} onClick={startMemory} className="rounded-xl border border-blue-200 bg-blue-50 p-5 text-left hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"><p className="font-bold text-blue-900">Memory Sequence</p><p className="mt-1 text-sm text-slate-600">Repeat the four highlighted tiles. Reward: 15% energy + 15 EXP.</p></button>
+          <button disabled={energyFull} onClick={startMath} className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-left hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"><p className="font-bold text-emerald-900">Quick Math</p><p className="mt-1 text-sm text-slate-600">Solve a multiplication challenge. Reward: 10% energy + 10 EXP.</p></button>
+        </div>
+      </Card>
+      {game === 'memory' && <Card className="text-center"><h2 className="mb-2 text-xl font-bold text-slate-800">Memory Sequence</h2><p className="mb-4 text-sm text-slate-500">{locked ? 'Watch the highlighted tiles, then repeat them.' : `Your turn: ${input.length}/${sequence.length}`}</p><div className="mx-auto grid w-64 grid-cols-2 gap-3">{['bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500'].map((color, index) => <button key={index} disabled={locked} onClick={() => chooseTile(index)} className={`h-24 rounded-xl transition-all duration-150 ${color} ${litTile === index ? 'scale-105 brightness-150 ring-4 ring-white shadow-[0_0_30px_rgba(255,255,255,0.9)]' : 'brightness-75'} disabled:cursor-not-allowed`} aria-label={`Tile ${index + 1}`} />)}</div><button onClick={() => setGame(null)} className="mt-5 text-sm text-slate-500 hover:text-slate-800">Cancel</button></Card>}
+      {game === 'math' && <Card><form onSubmit={checkMath} className="mx-auto max-w-sm space-y-4 text-center"><h2 className="text-xl font-bold text-slate-800">Quick Math</h2><p className="text-slate-600">What is {target} × 2?</p><input autoFocus type="number" required value={answer} onChange={event => setAnswer(event.target.value)} className="w-full rounded-lg border border-slate-300 px-4 py-3 text-center" /><button className="w-full rounded-lg bg-blue-600 py-3 font-bold text-white hover:bg-blue-700">Check Answer</button><button type="button" onClick={() => setGame(null)} className="text-sm text-slate-500 hover:text-slate-800">Cancel</button></form></Card>}
     </div>
   );
 }

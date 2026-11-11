@@ -425,7 +425,7 @@ function StudentProgress({ users, tasks, completions, db, appId, showToast }) {
                 <div className="p-6 bg-slate-50 border-b border-slate-100">
                   <div className="flex justify-between items-start mb-4">
                     <div>
-                      <h3 className="font-bold text-lg text-slate-900">{task.title}</h3>
+                      <h3 className="font-bold text-lg text-slate-900">{task.course ? `${task.title} - ${task.course}` : task.title}</h3>
                       <p className="text-sm text-slate-500">Due: {new Date(task.deadline).toLocaleDateString('en-GB')}</p>
                     </div>
                     <div className="text-right">
@@ -517,7 +517,7 @@ const getLevel = (exp) => {
   return level;
 };
 const getBadge = (level) => level >= 100
-  ? { level: 100, name: 'Demon King', icon: '👹👑', color: 'bg-red-100 text-red-900' }
+  ? { level: 100, name: 'Demon King', icon: '👹', color: 'bg-red-100 text-red-900' }
   : { level, ...LEVEL_BADGES[Math.min(level - 1, 9)] };
 const getUnlockedBadges = (level) => Array.from({ length: level }, (_, index) => getBadge(index + 1));
 
@@ -538,7 +538,7 @@ function Leaderboard({ users, currentUser }) {
           <div className="col-span-2 text-center">Rank</div>
           <div className="col-span-6">Student</div>
           <div className="col-span-2 text-center">Level</div>
-          <div className="col-span-2 text-right">Total EXP</div>
+          <div className="col-span-2 text-center">Total EXP</div>
         </div>
         
         <div className="divide-y divide-slate-100">
@@ -582,7 +582,7 @@ function Leaderboard({ users, currentUser }) {
                       {getLevel(student.exp)}
                     </div>
                   </div>
-                  <div className="col-span-2 text-right font-bold text-indigo-600">
+                  <div className="col-span-2 text-center font-bold text-indigo-600">
                     {student.exp}
                   </div>
                 </div>

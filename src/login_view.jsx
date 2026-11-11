@@ -117,7 +117,7 @@ export function LoginView({ onLogin, onRegister, onForgotPassword }) {
           </div>
 
           <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/10 shadow-lg text-slate-100 text-sm lg:text-base leading-relaxed">
-            AdaptLearn is an AI-driven adaptive learning analytics platform for higher education. It continuously captures student digital footprints, applies machine-learning clustering to build personalized learning personas, and proactively identifies academic-risk indicators in real time. Educators gain actionable dashboards, automated alerts, and assignment management tools; students receive personalized study plans, gamified progress tracking, and instant feedback — all within a secure, privacy-first ecosystem.
+            AdaptLearn is an adaptive, gamified learning platform engineered to help students build consistent study habits, complete tasks early, and prevent burnout through intelligent well-being tracking.
           </div>
         </div>
 
