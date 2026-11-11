@@ -259,7 +259,7 @@ function AllBadgesModal({ exp, onClose }) {
 function EnergyBar({ energy }) {
   const color = energy > 60 ? 'bg-emerald-500' : energy > 30 ? 'bg-amber-500' : 'bg-red-500';
   return (
-    <div className="w-full max-w-xl text-left">
+    <div className="w-full text-left">
       <div className="mb-1 flex justify-between text-sm font-semibold text-slate-700"><span>Energy</span><span>{energy}%</span></div>
       <div className="h-3 overflow-hidden rounded-full bg-slate-200"><div className={`h-full ${color} transition-all duration-500`} style={{ width: `${energy}%` }} /></div>
     </div>
