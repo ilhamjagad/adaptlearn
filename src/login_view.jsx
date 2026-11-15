@@ -14,6 +14,7 @@ export function LoginView({ onLogin, onRegister, onForgotPassword }) {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [successMsg, setSuccessMsg] = useState(null);
 
   const handleForgotPassword = async () => {
     const value = identifier.trim();
@@ -23,9 +24,10 @@ export function LoginView({ onLogin, onRegister, onForgotPassword }) {
     }
     setLoading(true);
     setError(null);
+    setSuccessMsg(null);
     try {
       await onForgotPassword(value);
-      setError('Password reset email sent. Check your inbox.');
+      setSuccessMsg('Password reset email sent. Check your inbox.');
     } catch (err) {
       setError(err.message.includes('not registered') ? err.message : 'Unable to send password reset email.');
     } finally {
@@ -36,6 +38,7 @@ export function LoginView({ onLogin, onRegister, onForgotPassword }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
+    setSuccessMsg(null);
 
     // Password Validation for Registration
     if (isRegistering) {
@@ -74,9 +77,11 @@ export function LoginView({ onLogin, onRegister, onForgotPassword }) {
       console.error("Auth action error:", err);
       let msg = err.message;
       if (msg.includes('Verification email sent')) {
-        msg = err.message;
+        setSuccessMsg('Verification email sent. Please check your inbox and verify your email before signing in.');
+        setIsRegistering(false);
+        return;
       } else if (msg.includes('Please verify your email')) {
-        msg = err.message;
+        msg = 'Please verify your email before signing in. Check your inbox for the verification link.';
       } else if (msg.includes('invalid-credential') || msg.includes('user-not-found') || msg.includes('wrong-password')) {
         msg = 'Incorrect password.';
       } else if (msg.includes('already registered') || msg.includes('email-already-in-use')) {
@@ -164,6 +169,12 @@ export function LoginView({ onLogin, onRegister, onForgotPassword }) {
           {error && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 rounded-xl text-xs font-medium">
               {error}
+            </div>
+          )}
+
+          {successMsg && (
+            <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-xs font-medium">
+              {successMsg}
             </div>
           )}
 

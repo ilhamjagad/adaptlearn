@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Clock, CheckSquare, Users, Plus, Trophy, Edit2, Trash2, Save, X, Paperclip, Link as LinkIcon } from 'lucide-react';
+import { Clock, CheckSquare, Users, Plus, Trophy, Edit2, Trash2, Save, X, Paperclip, Link as LinkIcon, AlertTriangle, AlertCircle, TrendingUp, Mail, HeartPulse } from 'lucide-react';
 import { doc, deleteDoc, updateDoc, collection, addDoc } from 'firebase/firestore';
 import emailjs from '@emailjs/browser';
 
@@ -20,7 +20,7 @@ const Card = ({ children, className = '' }) => (
 export function LecturerView({ user, tasks, completions, studySessions, currentView, db, appId, showToast, users }) {
   return (
     <>
-      {currentView === 'dashboard' && <LecturerDashboard users={users} tasks={tasks} completions={completions} studySessions={studySessions} />}
+      {currentView === 'dashboard' && <LecturerDashboard users={users} tasks={tasks} completions={completions} studySessions={studySessions} showToast={showToast} />}
       {currentView === 'tasks' && <TaskManagement db={db} appId={appId} tasks={tasks} lecturerId={user.id} showToast={showToast} students={users.filter(u => u.role === 'student' && u.email)} />}
       {currentView === 'progress' && <StudentProgress users={users} tasks={tasks} completions={completions} db={db} appId={appId} showToast={showToast} />}
       {currentView === 'leaderboard' && <Leaderboard users={users} currentUser={user} />}
@@ -28,105 +28,346 @@ export function LecturerView({ user, tasks, completions, studySessions, currentV
   );
 }
 
-function calculateBurnoutRisk(user, tasks, completions, studySessions) {
-  const now = Date.now();
-  const userCompletions = completions.filter(completion => completion.userId === user.id && completion.completedAt);
-  const assignedTasks = tasks.filter(task => task.type === 'global' || task.ownerId === user.id);
-  const overdueCount = assignedTasks.filter(task => !userCompletions.some(completion => completion.taskId === task.id) && new Date(task.deadline).getTime() < now).length;
-  const dueSoonOrLateCount = userCompletions.filter(completion => {
-    const task = assignedTasks.find(item => item.id === completion.taskId);
-    if (!task) return false;
-    const deadline = new Date(task.deadline).getTime();
-    return deadline - new Date(completion.completedAt).getTime() <= 24 * 60 * 60 * 1000;
-  }).length + overdueCount;
-  const procrastinationRate = assignedTasks.length ? dueSoonOrLateCount / assignedTasks.length : 0;
-  const procrastination = procrastinationRate > 0.6 ? 100 : 0;
+function LecturerBurnoutMonitor({ students, showToast }) {
+  const [intervenedIds, setIntervenedIds] = useState(new Set());
 
-  const recentSessions = studySessions.filter(session => session.userId === user.id && session.completedAt && now - new Date(session.completedAt).getTime() <= 7 * 24 * 60 * 60 * 1000);
-  const dailyStudyMinutes = new Map();
-  let lateNightSessions = 0;
-  recentSessions.forEach(session => {
-    const date = new Date(session.completedAt);
-    const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(date);
-    dailyStudyMinutes.set(day, (dailyStudyMinutes.get(day) || 0) + Number(session.durationMinutes || 0));
-    const hour = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Jakarta', hour: '2-digit', hourCycle: 'h23' }).format(date));
-    const minute = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Jakarta', minute: '2-digit' }).format(date));
-    if (hour < 4 || (hour === 4 && minute <= 30)) lateNightSessions += 1;
-  });
-  const studyIntensity = [...dailyStudyMinutes.values()].some(minutes => minutes > 300) ? 100 : 0;
-  const lateNightRate = recentSessions.length ? lateNightSessions / recentSessions.length : 0;
-  const lateNight = lateNightRate >= 0.5 ? 100 : lateNightRate > 0 ? 50 : 0;
+  const handleIntervene = (student, actionType) => {
+    setIntervenedIds(prev => new Set(prev).add(student.id));
+    if (actionType === 'email') {
+      const subject = encodeURIComponent('Academic Support & Well-being Check-in - AdaptLearn');
+      const body = encodeURIComponent(
+        `Dear ${student.name},\n\nI noticed from our learning analytics that you may be experiencing high workload or study fatigue recently. Please remember that your health and well-being come first.\n\nLet me know if you need any adjustments or support with your course assignments.\n\nBest regards,\nViva Arifin, MMSI`
+      );
+      window.open(`mailto:${student.email || ''}?subject=${subject}&body=${body}`, '_blank');
+      showToast?.(`Email check-in opened for ${student.name}`);
+    } else {
+      showToast?.(`Rest recommendation recorded for ${student.name}`);
+    }
+  };
 
-  const currentWeekStart = now - 7 * 24 * 60 * 60 * 1000;
-  const previousWeekStart = now - 14 * 24 * 60 * 60 * 1000;
-  const currentWeekCount = userCompletions.filter(c => new Date(c.completedAt).getTime() >= currentWeekStart).length;
-  const previousWeekCount = userCompletions.filter(c => {
-    const timestamp = new Date(c.completedAt).getTime();
-    return timestamp >= previousWeekStart && timestamp < currentWeekStart;
-  }).length;
-  const activityDrop = previousWeekCount > 0 && currentWeekCount < previousWeekCount * 0.5 ? 20 : 0;
-  const score = Math.min(100, Math.round(procrastination * 0.35 + studyIntensity * 0.35 + lateNight * 0.3 + activityDrop));
-  const triggers = [
-    ...(procrastination ? ['Over 60% of assignments completed close to or after their deadlines'] : []),
-    ...(studyIntensity ? ['Study Care exceeded 5 hours in one day'] : []),
-    ...(lateNight ? ['Late-night study sessions detected (00:00–04:30 WIB)'] : []),
-    ...(activityDrop ? ['Task completion activity dropped by over 50% compared with the previous week'] : []),
-  ];
-
-  return { score, triggers };
-}
-
-function LecturerBurnoutMonitor({ students }) {
   return (
     <Card>
-      <h2 className="text-xl font-bold text-slate-800 mb-4">Student Well-being Monitor</h2>
-      {!students.length ? <p className="text-sm text-slate-500">No students currently show moderate or high risk indicators.</p> : (
-        <div className="space-y-3">
-          {students.map(({ student, risk }) => (
-            <div key={student.id} className={`flex items-center justify-between gap-4 rounded-xl p-4 ${risk.score >= 60 ? 'bg-red-50 text-red-800' : 'bg-amber-50 text-amber-800'}`}>
-              <div><p className="font-semibold">{student.name}</p><p className="text-sm">{risk.score >= 60 ? 'High (Burnout Indicated)' : 'Moderate (At Risk)'}</p></div>
-              <span className="text-xl font-bold">{risk.score}/100</span>
-            </div>
-          ))}
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+            <HeartPulse size={20} className="text-red-500" />
+            Student Well-being & Quick Intervention Monitor
+          </h2>
+          <p className="text-sm text-slate-500 mt-0.5">Students exhibiting Moderate or High burnout risk indicators</p>
+        </div>
+        <span className="text-xs font-semibold px-2.5 py-1 bg-red-50 text-red-700 rounded-full">
+          {students.length} At-Risk
+        </span>
+      </div>
+
+      {!students.length ? (
+        <div className="p-6 text-center text-slate-500 bg-slate-50 rounded-xl border border-slate-100">
+          No students currently show moderate or high risk indicators. The class is maintaining healthy study habits!
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {students.map(({ student, risk }) => {
+            const isHigh = risk.score >= 60;
+            const containerStyle = isHigh
+              ? 'bg-red-50/70 border-red-200 text-red-950'
+              : 'bg-amber-50/70 border-amber-200 text-amber-950';
+            const badgeStyle = isHigh
+              ? 'bg-red-100 text-red-800 border-red-200'
+              : 'bg-amber-100 text-amber-800 border-amber-200';
+            const hasIntervened = intervenedIds.has(student.id);
+
+            return (
+              <div key={student.id} className={`p-4 rounded-xl border ${containerStyle} space-y-3 transition-all`}>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-bold text-slate-900 text-base">{student.name}</h4>
+                      {student.nim && <span className="text-xs text-slate-500">({student.nim})</span>}
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${badgeStyle}`}>
+                        {risk.status}
+                      </span>
+                    </div>
+                    {student.email && (
+                      <p className="text-xs text-slate-600 mt-0.5">{student.email}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl font-black text-slate-900">{risk.score}</span>
+                    <span className="text-xs text-slate-500 font-semibold">/ 100</span>
+                  </div>
+                </div>
+
+                {risk.triggers && risk.triggers.length > 0 && (
+                  <div className="bg-white/80 rounded-lg p-3 border border-slate-200/60">
+                    <p className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Identified Triggers:</p>
+                    <ul className="list-disc list-inside space-y-0.5 text-xs text-slate-700">
+                      {risk.triggers.map((trigger, idx) => (
+                        <li key={idx}>{trigger}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-200/60">
+                  <span className="text-xs text-slate-500">
+                    {hasIntervened ? '✓ Intervention initiated' : 'Action recommended'}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleIntervene(student, 'rest')}
+                      className="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg transition-colors"
+                    >
+                      Log Intervention
+                    </button>
+                    {student.email && (
+                      <button
+                        onClick={() => handleIntervene(student, 'email')}
+                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors"
+                      >
+                        <Mail size={13} />
+                        Contact Student
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </Card>
   );
 }
 
-function LecturerDashboard({ users, tasks, completions, studySessions }) {
-  const burnoutStudents = users.filter(student => student.role === 'student').map(student => ({
+function LecturerDashboard({ users, tasks, completions, studySessions, showToast }) {
+  const now = Date.now();
+  const students = users.filter(student => student.role === 'student');
+  const globalTasks = tasks.filter(t => t.type === 'global');
+  const studentsCount = students.length;
+  const globalTasksCount = globalTasks.length;
+
+  const burnoutStudents = students.map(student => ({
     student,
-    risk: burnoutRiskUtil(student, tasks, completions, studySessions),
+    risk: burnoutRiskUtil(student, tasks, completions, studySessions, student.energy ?? 100),
   })).filter(entry => entry.risk.score >= 30).sort((a, b) => b.risk.score - a.risk.score);
-  const studentsCount = users.filter(u => u.role === 'student').length;
-  const globalTasksCount = tasks.filter(t => t.type === 'global').length;
+
+  const highRiskCount = burnoutStudents.filter(b => b.risk.score >= 60).length;
+  const moderateRiskCount = burnoutStudents.filter(b => b.risk.score >= 30 && b.risk.score < 60).length;
+
+  // Feature 3: Class Activity Summary (Past 7 Days)
+  const oneWeekAgo = now - 7 * 24 * 60 * 60 * 1000;
+  const weeklyClassSessions = (studySessions || []).filter(
+    s => s.completedAt && new Date(s.completedAt).getTime() >= oneWeekAgo
+  );
+  const totalClassStudyMinutes = weeklyClassSessions.reduce((acc, s) => acc + Number(s.durationMinutes || 0), 0);
+  const classHours = Math.floor(totalClassStudyMinutes / 60);
+  const classRemainingMins = totalClassStudyMinutes % 60;
+  const classStudyFormatted = classHours > 0 ? `${classHours}h ${classRemainingMins}m` : `${classRemainingMins}m`;
+
+  const activeStudentsThisWeek = new Set(weeklyClassSessions.map(s => s.userId)).size;
+  const weeklyCompletionsCount = (completions || []).filter(
+    c => c.completedAt && new Date(c.completedAt).getTime() >= oneWeekAgo
+  ).length;
+
+  // Feature 1: Upcoming Deadline Alerts (within 3 days or Overdue)
+  const deadlineAlerts = globalTasks.map(task => {
+    const deadlineTime = new Date(task.deadline).getTime();
+    const diffDays = Math.ceil((deadlineTime - now) / (1000 * 60 * 60 * 24));
+    const submittedUserIds = completions.filter(c => c.taskId === task.id).map(c => c.userId);
+    const submittedCount = submittedUserIds.length;
+    const pendingCount = students.filter(s => !submittedUserIds.includes(s.id)).length;
+    const isOverdue = diffDays < 0;
+    const isUrgent = diffDays >= 0 && diffDays <= 3;
+    return {
+      task,
+      diffDays,
+      submittedCount,
+      pendingCount,
+      isOverdue,
+      isUrgent,
+    };
+  }).filter(item => item.isOverdue || item.isUrgent)
+    .sort((a, b) => a.diffDays - b.diffDays);
+
+  // Feature 2: Assignment Submission Tracker
+  const submissionTracker = globalTasks.map(task => {
+    const submittedCount = completions.filter(c => c.taskId === task.id).length;
+    const totalCount = students.length;
+    const rate = totalCount > 0 ? Math.round((submittedCount / totalCount) * 100) : 0;
+    return {
+      task,
+      submittedCount,
+      totalCount,
+      rate,
+    };
+  }).sort((a, b) => new Date(b.task.createdAt || 0) - new Date(a.task.createdAt || 0));
 
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
         <h1 className="text-3xl font-bold text-slate-900">Lecturer Overview</h1>
-        <p className="text-slate-500 mt-1">Manage tasks and monitor student progress.</p>
+        <p className="text-slate-500 mt-1">Monitor class activity, submissions, deadline alerts, and student well-being.</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {/* Feature 3: Class Activity Summary & Top Stat Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         <Card className="bg-gradient-to-br from-blue-600 to-blue-900 text-white border-none">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-blue-100 font-medium text-lg">Total Students</h3>
-            <Users size={24} className="text-blue-200" />
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-blue-100 font-medium text-sm">Total Students</h3>
+            <Users size={22} className="text-blue-200" />
           </div>
-          <p className="text-4xl font-bold">{studentsCount}</p>
+          <p className="text-3xl font-bold">{studentsCount}</p>
+          <p className="text-xs text-blue-200 mt-2 flex items-center gap-1">
+            <span className="font-semibold text-white">{activeStudentsThisWeek}</span> active this week
+          </p>
         </Card>
-        
-        <Card className="bg-gradient-to-br from-blue-500 to-blue-800 text-white border-none">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-blue-100 font-medium text-lg">Active Assignments</h3>
-            <CheckSquare size={24} className="text-blue-200" />
+
+        <Card className="bg-gradient-to-br from-indigo-600 to-indigo-900 text-white border-none">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-indigo-100 font-medium text-sm">Active Assignments</h3>
+            <CheckSquare size={22} className="text-indigo-200" />
           </div>
-          <p className="text-4xl font-bold">{globalTasksCount}</p>
+          <p className="text-3xl font-bold">{globalTasksCount}</p>
+          <p className="text-xs text-indigo-200 mt-2 flex items-center gap-1">
+            <span className="font-semibold text-white">{weeklyCompletionsCount}</span> submitted this week
+          </p>
+        </Card>
+
+        <Card className="bg-gradient-to-br from-purple-600 to-purple-900 text-white border-none">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-purple-100 font-medium text-sm">Class Study Time</h3>
+            <Clock size={22} className="text-purple-200" />
+          </div>
+          <p className="text-3xl font-bold">{classStudyFormatted}</p>
+          <p className="text-xs text-purple-200 mt-2">
+            Total self-study (past 7 days)
+          </p>
+        </Card>
+
+        <Card className={`border-none text-white ${highRiskCount > 0 ? 'bg-gradient-to-br from-red-600 to-red-900' : 'bg-gradient-to-br from-emerald-600 to-emerald-900'}`}>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-medium text-sm opacity-90">Burnout Alerts</h3>
+            <AlertTriangle size={22} className="opacity-90" />
+          </div>
+          <p className="text-3xl font-bold">{highRiskCount + moderateRiskCount}</p>
+          <p className="text-xs mt-2 opacity-90">
+            {highRiskCount} High Risk · {moderateRiskCount} Moderate Risk
+          </p>
         </Card>
       </div>
-      <LecturerBurnoutMonitor students={burnoutStudents} />
+
+      {/* Feature 1: Upcoming Deadline Alerts */}
+      <Card>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <AlertCircle size={20} className="text-amber-500" />
+              Upcoming Deadline Alerts
+            </h2>
+            <p className="text-sm text-slate-500 mt-0.5">Assignments requiring attention due to impending deadlines</p>
+          </div>
+          <span className="text-xs font-semibold px-2.5 py-1 bg-amber-50 text-amber-700 rounded-full">
+            {deadlineAlerts.length} Attention Needed
+          </span>
+        </div>
+
+        {deadlineAlerts.length === 0 ? (
+          <div className="p-6 text-center text-slate-500 bg-slate-50 rounded-xl border border-slate-100">
+            No urgent or overdue deadlines right now. All assignments are on track!
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {deadlineAlerts.map(({ task, diffDays, submittedCount, pendingCount, isOverdue }) => {
+              const badgeStyle = isOverdue
+                ? 'bg-red-100 text-red-800 border-red-200'
+                : diffDays === 0
+                ? 'bg-amber-100 text-amber-800 border-amber-200'
+                : 'bg-orange-100 text-orange-800 border-orange-200';
+              const label = isOverdue
+                ? 'Overdue'
+                : diffDays === 0
+                ? 'Due Today'
+                : `Due in ${diffDays} day${diffDays > 1 ? 's' : ''}`;
+
+              return (
+                <div key={task.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${badgeStyle}`}>
+                        {label}
+                      </span>
+                      <h4 className="font-bold text-slate-800 text-base">{task.course ? `${task.title} - ${task.course}` : task.title}</h4>
+                    </div>
+                    <p className="text-xs text-slate-500 flex items-center gap-1.5 mt-1">
+                      <Clock size={13} />
+                      Deadline: {new Date(task.deadline).toLocaleDateString('en-GB')}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-4 text-sm shrink-0">
+                    <div className="text-right">
+                      <p className="font-bold text-red-600">{pendingCount} Not Submitted</p>
+                      <p className="text-xs text-slate-500">{submittedCount} Submitted</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+
+      {/* Feature 2: Assignment Submission Tracker */}
+      <Card>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <TrendingUp size={20} className="text-blue-600" />
+              Assignment Submission Tracker
+            </h2>
+            <p className="text-sm text-slate-500 mt-0.5">Real-time completion percentage for all global assignments</p>
+          </div>
+          <span className="text-xs font-semibold px-2.5 py-1 bg-blue-50 text-blue-700 rounded-full">
+            {submissionTracker.length} Active
+          </span>
+        </div>
+
+        {submissionTracker.length === 0 ? (
+          <div className="p-6 text-center text-slate-500 bg-slate-50 rounded-xl border border-slate-100">
+            No assignments created yet. Create assignments in Task Management to track progress.
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {submissionTracker.map(({ task, submittedCount, totalCount, rate }) => (
+              <div key={task.id} className="p-4 rounded-xl border border-slate-100 bg-slate-50 space-y-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                  <div>
+                    <h4 className="font-bold text-slate-800 text-sm">{task.course ? `${task.title} - ${task.course}` : task.title}</h4>
+                    <p className="text-xs text-slate-500">Due: {new Date(task.deadline).toLocaleDateString('en-GB')}</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-semibold text-slate-600">
+                      {submittedCount} / {totalCount} Students
+                    </span>
+                    <span className="text-sm font-black text-blue-600 min-w-[42px] text-right">
+                      {rate}%
+                    </span>
+                  </div>
+                </div>
+                <div className="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-blue-600 rounded-full transition-all duration-700"
+                    style={{ width: `${rate}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* Feature 4: Student Well-being & Quick Intervention Monitor */}
+      <LecturerBurnoutMonitor students={burnoutStudents} showToast={showToast} />
     </div>
   );
 }

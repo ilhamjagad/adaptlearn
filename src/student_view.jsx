@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, Bell, Trophy, BookOpen, Play, CheckSquare, Settings, Award, Square, Gamepad2, Plus, Paperclip, Link as LinkIcon, FileText, Image, Upload, X } from 'lucide-react';
+import { Clock, Bell, Trophy, BookOpen, Play, CheckSquare, Settings, Award, Square, Gamepad2, Plus, Paperclip, Link as LinkIcon, FileText, Image, Upload, X, Calendar, TrendingUp } from 'lucide-react';
 import { collection, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { calculateBurnoutRisk } from './burnout';
 
@@ -54,15 +54,19 @@ const Card = ({ children, className = '' }) => (
   </div>
 );
 
-export function StudentView({ user, allTasks, completions, studySessions, currentView, setCurrentView, nextDeadlineId, onAwardExp, onStudySessionComplete, onBreakLockChange, burnout, db, appId, showToast, users }) {
+export function StudentView({ user, allTasks, completions, studySessions, currentView, setCurrentView, nextDeadlineId, onAwardExp, onStudySessionComplete, onBreakLockChange, onBurnoutChange, burnout, db, appId, showToast, users }) {
   const [showAllBadges, setShowAllBadges] = useState(false);
   const [energy, _setEnergy] = useState(() => Number(user.energy ?? localStorage.getItem(`energy_${user.id}`) ?? 100));
+  const [sessionStartTime, setSessionStartTime] = useState(null);
 
   const setEnergy = async (valueOrUpdater) => {
     _setEnergy(prev => {
       const next = typeof valueOrUpdater === 'function' ? valueOrUpdater(prev) : valueOrUpdater;
       const clamped = Math.max(0, Math.min(100, next));
       updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', user.id), { energy: clamped }).catch(() => {});
+      const activeMinutes = sessionStartTime ? Math.floor((Date.now() - sessionStartTime) / 60000) : 0;
+      const currentBurnout = calculateBurnoutRisk({ ...user, energy: clamped, activeStudyMinutesToday: activeMinutes }, allTasks, completions, studySessions);
+      onBurnoutChange?.(currentBurnout);
       localStorage.setItem(`energy_${user.id}`, String(clamped));
       return clamped;
     });
@@ -76,9 +80,9 @@ export function StudentView({ user, allTasks, completions, studySessions, curren
 
   return (
     <>
-      {currentView === 'dashboard' && <StudentDashboard user={user} allTasks={allTasks} completions={completions} energy={energy} studySessions={studySessions} burnout={burnout || calculateBurnoutRisk(user, allTasks, completions, studySessions)} nextDeadlineId={nextDeadlineId} setCurrentView={setCurrentView} onSeeAllBadges={() => setShowAllBadges(true)} db={db} appId={appId} />}
+      {currentView === 'dashboard' && <StudentDashboard user={user} allTasks={allTasks} completions={completions} energy={energy} studySessions={studySessions} burnout={burnout || calculateBurnoutRisk(user, allTasks, completions, studySessions, energy)} nextDeadlineId={nextDeadlineId} setCurrentView={setCurrentView} onSeeAllBadges={() => setShowAllBadges(true)} db={db} appId={appId} />}
       {showAllBadges && <AllBadgesModal exp={user.exp} onClose={() => setShowAllBadges(false)} />}
-      {currentView === 'study' && <StudyCare user={user} db={db} appId={appId} showToast={showToast} onAwardExp={onAwardExp} onStudySessionComplete={onStudySessionComplete} onBreakLockChange={onBreakLockChange} burnout={burnout || calculateBurnoutRisk(user, allTasks, completions, studySessions)} energy={energy} setEnergy={setEnergy} />}
+      {currentView === 'study' && <StudyCare user={user} allTasks={allTasks} completions={completions} studySessions={studySessions} db={db} appId={appId} showToast={showToast} onAwardExp={onAwardExp} onStudySessionComplete={onStudySessionComplete} onBreakLockChange={onBreakLockChange} onSessionStart={setSessionStartTime} burnout={burnout || calculateBurnoutRisk(user, allTasks, completions, studySessions, energy)} energy={energy} setEnergy={setEnergy} />}
       {currentView === 'todo' && <TodoList user={user} allTasksList={allTasks} completions={completions} onComplete={(exp) => onAwardExp(exp, 'Task Completed')} db={db} appId={appId} showToast={showToast} highlightTaskId={nextDeadlineId} />}
       {currentView === 'leaderboard' && <Leaderboard users={users} currentUser={user} />}
       {currentView === 'courses' && <Courses user={user} />}
@@ -171,6 +175,8 @@ function StudentDashboard({ user, allTasks, completions, energy, studySessions, 
 
       <BurnoutStatusCard risk={burnout} />
 
+      <WeeklySummaryCard user={user} completions={completions} studySessions={studySessions} />
+
       <Card>
         <h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2">
           <Trophy size={20} className="text-yellow-500" />
@@ -210,6 +216,96 @@ function BurnoutStatusCard({ risk }) {
       </div>
       <p className="mt-3 text-sm">{recommendation}</p>
       {risk.triggers.length > 0 && <ul className="mt-3 list-disc space-y-1 pl-5 text-sm">{risk.triggers.map(trigger => <li key={trigger}>{trigger}</li>)}</ul>}
+    </Card>
+  );
+}
+
+function WeeklySummaryCard({ user, completions, studySessions }) {
+  const now = Date.now();
+  const oneWeekAgo = now - 7 * 24 * 60 * 60 * 1000;
+
+  const weeklySessions = (studySessions || []).filter(
+    s => s.userId === user.id && s.completedAt && new Date(s.completedAt).getTime() >= oneWeekAgo
+  );
+  const weeklyStudyMinutes = weeklySessions.reduce((acc, s) => acc + Number(s.durationMinutes || 0), 0);
+  const studyHours = Math.floor(weeklyStudyMinutes / 60);
+  const studyRemainingMins = weeklyStudyMinutes % 60;
+  const studyTimeFormatted = studyHours > 0 ? `${studyHours}h ${studyRemainingMins}m` : `${studyRemainingMins}m`;
+
+  const weeklyCompletions = (completions || []).filter(
+    c => c.userId === user.id && c.completedAt && new Date(c.completedAt).getTime() >= oneWeekAgo
+  );
+  const weeklyTasksCount = weeklyCompletions.length;
+
+  const taskExp = weeklyCompletions.reduce((acc, c) => acc + Number(c.expAwarded || 0), 0);
+  const studyExp = weeklyStudyMinutes;
+  const weeklyExpTotal = taskExp + studyExp;
+
+  const activeDaysSet = new Set();
+  weeklySessions.forEach(s => {
+    activeDaysSet.add(new Date(s.completedAt).toDateString());
+  });
+  weeklyCompletions.forEach(c => {
+    activeDaysSet.add(new Date(c.completedAt).toDateString());
+  });
+  const activeDaysCount = activeDaysSet.size;
+
+  return (
+    <Card>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+            <TrendingUp size={20} className="text-blue-600" />
+            Weekly Summary
+          </h3>
+          <p className="text-sm text-slate-500 mt-0.5">Your learning activity over the past 7 days</p>
+        </div>
+        <span className="text-xs font-semibold px-2.5 py-1 bg-blue-50 text-blue-700 rounded-full">
+          Past 7 Days
+        </span>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+            <Clock size={20} />
+          </div>
+          <div>
+            <p className="text-xs font-medium text-slate-500">Study Time</p>
+            <p className="text-lg font-bold text-slate-800 mt-0.5">{studyTimeFormatted}</p>
+          </div>
+        </div>
+
+        <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+            <CheckSquare size={20} />
+          </div>
+          <div>
+            <p className="text-xs font-medium text-slate-500">Tasks Completed</p>
+            <p className="text-lg font-bold text-slate-800 mt-0.5">{weeklyTasksCount} {weeklyTasksCount === 1 ? 'Task' : 'Tasks'}</p>
+          </div>
+        </div>
+
+        <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+            <Award size={20} />
+          </div>
+          <div>
+            <p className="text-xs font-medium text-slate-500">EXP Gained</p>
+            <p className="text-lg font-bold text-slate-800 mt-0.5">+{weeklyExpTotal} EXP</p>
+          </div>
+        </div>
+
+        <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
+            <Calendar size={20} />
+          </div>
+          <div>
+            <p className="text-xs font-medium text-slate-500">Active Days</p>
+            <p className="text-lg font-bold text-slate-800 mt-0.5">{activeDaysCount} / 7 Days</p>
+          </div>
+        </div>
+      </div>
     </Card>
   );
 }
@@ -278,7 +374,7 @@ function EnergyBar({ energy }) {
   );
 }
 
-function StudyCare({ user, db, appId, showToast, burnout, energy, setEnergy, onAwardExp, onStudySessionComplete, onBreakLockChange }) {
+function StudyCare({ user, allTasks, completions, studySessions, db, appId, showToast, burnout, energy, setEnergy, onAwardExp, onStudySessionComplete, onBreakLockChange, onSessionStart }) {
   const [minutes, setMinutes] = useState(25);
   const [timeLeft, setTimeLeft] = useState(25 * 60);
   const [isActive, setIsActive] = useState(false);
@@ -327,13 +423,21 @@ function StudyCare({ user, db, appId, showToast, burnout, energy, setEnergy, onA
       showToast?.('High burnout risk: focus sessions are limited to 45 minutes.');
       setMinutes(sessionMinutes);
     }
-    setSessionStartedAt(new Date().toISOString());
+    const startedAt = new Date().toISOString();
+    setSessionStartedAt(startedAt);
+    onSessionStart?.(Date.now());
     setTimeLeft(sessionMinutes * 60);
     setIsActive(true);
     setMode('study');
   };
 
-  const stopTimer = () => setIsActive(false);
+  const stopTimer = () => {
+    setIsActive(false);
+    if (sessionStartedAt) {
+      const sessionElapsedMinutes = Math.floor((Date.now() - new Date(sessionStartedAt).getTime()) / 60000);
+      onStudySessionComplete?.({ userId: user.id, durationMinutes: sessionElapsedMinutes, startedAt: sessionStartedAt, completedAt: new Date().toISOString(), partial: true });
+    }
+  };
   
   const resetTimer = () => {
     setIsActive(false);
@@ -347,10 +451,11 @@ function StudyCare({ user, db, appId, showToast, burnout, energy, setEnergy, onA
     await onStudySessionComplete?.({
       userId: user.id,
       durationMinutes: minutes,
-      startedAt: sessionStartedAt || completedAt,
-      completedAt,
-    });
-    const updatedRisk = calculateBurnoutRisk(user, [], [], [{ userId: user.id, durationMinutes: minutes, completedAt }]);
+        startedAt: sessionStartedAt || completedAt,
+        completedAt,
+      });
+      onSessionStart?.(null);
+      const updatedRisk = calculateBurnoutRisk(user, allTasks, completions, [...studySessions, { userId: user.id, durationMinutes: minutes, completedAt }], Math.max(0, energy - minutes));
     setRisk(updatedRisk);
     if (updatedRisk.score >= 60) {
       setIsForcedBreak(true);

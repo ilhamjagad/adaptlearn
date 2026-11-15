@@ -335,6 +335,7 @@ export default function AdaptLearn() {
               studySessions={studySessions}
               onStudySessionComplete={addStudySession}
               onBreakLockChange={setStudyBreakLocked}
+              onBurnoutChange={risk => setDbUser(current => current ? { ...current, burnoutScore: risk.score, burnoutStatus: risk.status, energy: current.energy } : current)}
               currentView={currentView} 
               setCurrentView={setCurrentView}
               nextDeadlineId={nextDeadline?.id}
@@ -343,7 +344,7 @@ export default function AdaptLearn() {
               appId={appId} 
               showToast={showToast} 
               users={allUsers}
-              burnout={calculateBurnoutRisk(dbUser, tasks, completions, studySessions)}
+              burnout={calculateBurnoutRisk(dbUser, tasks, completions, studySessions, dbUser?.energy ?? 100)}
             />
           )}
           
