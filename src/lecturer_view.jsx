@@ -386,6 +386,7 @@ function TaskManagement({ db, appId, tasks, lecturerId, showToast, students }) {
   const [newTask, setNewTask] = useState({ title: '', description: '', deadline: '', resourceUrl: '', course: '' });
   const [attachment, setAttachment] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [sendNotification, setSendNotification] = useState(true);
   const globalTasks = tasks.filter(t => t.type === 'global').sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
   const handleCreateGlobalTask = async (e) => {
@@ -413,42 +414,44 @@ function TaskManagement({ db, appId, tasks, lecturerId, showToast, students }) {
         createdAt: new Date().toISOString()
       });
 
-      const { serviceId, templateId, publicKey } = emailJsConfig;
-      if (!serviceId || !templateId || !publicKey) {
-        throw new Error('Email notifications are not configured. Check the VITE_EMAILJS variables and restart the development server.');
-      }
-      if (!students.length) {
-        showToast('Assignment posted, but no verified student email addresses were found.');
-      } else {
-        const emailResults = await Promise.allSettled(students.map(student => emailjs.send(
-          serviceId,
-          templateId,
-          {
-            to_email: student.email,
-            email: student.email,
-            to_name: student.name,
-            name: student.name,
-            assignment_title: newTask.title,
-            course: newTask.course,
-            deadline: new Date(newTask.deadline).toLocaleDateString('en-GB'),
-            description: newTask.description,
-            resource_url: newTask.resourceUrl,
-          },
-          { publicKey }
-        )));
-        const failedEmails = emailResults.filter(result => result.status === 'rejected').length;
-        if (failedEmails) {
-          console.error('EmailJS send errors:', emailResults.filter(result => result.status === 'rejected'));
-          showToast(`${failedEmails} of ${students.length} notification email(s) failed. Check EmailJS configuration and template variables.`);
+      if (sendNotification) {
+        const { serviceId, templateId, publicKey } = emailJsConfig;
+        if (!serviceId || !templateId || !publicKey) {
+          showToast?.('Assignment posted, but email service is not configured.');
+        } else if (!students.length) {
+          showToast?.('Assignment posted, but no student email addresses found.');
         } else {
-          showToast(`Assignment posted and notification sent to ${students.length} student(s).`);
+          const emailResults = await Promise.allSettled(students.map(student => emailjs.send(
+            serviceId,
+            templateId,
+            {
+              to_email: student.email,
+              email: student.email,
+              to_name: student.name,
+              name: student.name,
+              assignment_title: newTask.title,
+              course: newTask.course,
+              deadline: new Date(newTask.deadline).toLocaleDateString('en-GB'),
+              description: newTask.description,
+              resource_url: newTask.resourceUrl,
+            },
+            { publicKey }
+          )));
+          const failedEmails = emailResults.filter(result => result.status === 'rejected').length;
+          if (failedEmails) {
+            console.error('EmailJS send errors:', emailResults.filter(result => result.status === 'rejected'));
+            showToast?.(`Assignment posted. ${failedEmails} of ${students.length} notification email(s) failed.`);
+          } else {
+            showToast?.(`Assignment posted and notification sent to ${students.length} student(s).`);
+          }
         }
+      } else {
+        showToast?.('Assignment broadcasted to all students (without email notification).');
       }
       
       setNewTask({ title: '', description: '', deadline: '', resourceUrl: '', course: '' });
       setAttachment(null);
       e.target.reset();
-      showToast("Global assignment broadcasted to all students!");
     } catch (error) {
       console.error(error);
       showToast(error.message || "Failed to create assignment.");
@@ -503,9 +506,20 @@ function TaskManagement({ db, appId, tasks, lecturerId, showToast, students }) {
                 <input type="file" onChange={e => setAttachment(e.target.files?.[0] || null)} className="hidden" />
               </label>
             </div>
-            <button type="submit" disabled={uploading} className="px-6 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition-colors w-full md:w-auto disabled:opacity-50">
-              {uploading ? 'Uploading...' : 'Assign to All Students'}
-            </button>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4 pt-2">
+              <button type="submit" disabled={uploading} className="px-6 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-colors w-full sm:w-auto disabled:opacity-50">
+                {uploading ? 'Uploading...' : 'Assign to All Students'}
+              </button>
+              <label className="inline-flex items-center gap-2 cursor-pointer text-sm font-medium text-slate-700 select-none">
+                <input
+                  type="checkbox"
+                  checked={sendNotification}
+                  onChange={e => setSendNotification(e.target.checked)}
+                  className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                />
+                <span>Send email notification to students</span>
+              </label>
+            </div>
         </form>
       </Card>
 
