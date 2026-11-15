@@ -20,7 +20,7 @@ const Card = ({ children, className = '' }) => (
 export function LecturerView({ user, tasks, completions, studySessions, currentView, db, appId, showToast, users }) {
   return (
     <>
-      {currentView === 'dashboard' && <LecturerDashboard users={users} tasks={tasks} completions={completions} studySessions={studySessions} showToast={showToast} />}
+      {currentView === 'dashboard' && <LecturerDashboard users={users} tasks={tasks} completions={completions} studySessions={studySessions} showToast={showToast} db={db} appId={appId} lecturerId={user.id} />}
       {currentView === 'tasks' && <TaskManagement db={db} appId={appId} tasks={tasks} lecturerId={user.id} showToast={showToast} students={users.filter(u => u.role === 'student' && u.email)} />}
       {currentView === 'progress' && <StudentProgress users={users} tasks={tasks} completions={completions} db={db} appId={appId} showToast={showToast} />}
       {currentView === 'leaderboard' && <Leaderboard users={users} currentUser={user} />}
@@ -28,11 +28,36 @@ export function LecturerView({ user, tasks, completions, studySessions, currentV
   );
 }
 
-function LecturerBurnoutMonitor({ students, showToast }) {
-  const [intervenedIds, setIntervenedIds] = useState(new Set());
+function LecturerBurnoutMonitor({ students, showToast, db, appId, lecturerId }) {
+  const [interventionNotes, setInterventionNotes] = useState({});
+  const [savingStudentId, setSavingStudentId] = useState(null);
 
-  const handleIntervene = (student, actionType) => {
-    setIntervenedIds(prev => new Set(prev).add(student.id));
+  const handleIntervene = async (student, actionType) => {
+    if (actionType === 'log') {
+      const note = interventionNotes[student.id]?.trim();
+      if (!note) {
+        showToast?.('Add an intervention note before logging.');
+        return;
+      }
+      setSavingStudentId(student.id);
+      try {
+        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'interventions'), {
+          studentId: student.id,
+          studentName: student.name,
+          lecturerId,
+          note,
+          createdAt: new Date().toISOString(),
+        });
+        showToast?.(`Intervention for ${student.name} logged.`);
+        setInterventionNotes(prev => ({ ...prev, [student.id]: '' }));
+      } catch (error) {
+        console.error('Failed to log intervention:', error);
+        showToast?.('Failed to save intervention note.');
+      } finally {
+        setSavingStudentId(null);
+      }
+      return;
+    }
     if (actionType === 'email') {
       const subject = encodeURIComponent('Academic Support & Well-being Check-in - AdaptLearn');
       const body = encodeURIComponent(
@@ -74,7 +99,7 @@ function LecturerBurnoutMonitor({ students, showToast }) {
             const badgeStyle = isHigh
               ? 'bg-red-100 text-red-800 border-red-200'
               : 'bg-amber-100 text-amber-800 border-amber-200';
-            const hasIntervened = intervenedIds.has(student.id);
+            const isSaving = savingStudentId === student.id;
 
             return (
               <div key={student.id} className={`p-4 rounded-xl border ${containerStyle} space-y-3 transition-all`}>
@@ -109,16 +134,26 @@ function LecturerBurnoutMonitor({ students, showToast }) {
                 )}
 
                 <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-200/60">
-                  <span className="text-xs text-slate-500">
-                    {hasIntervened ? '✓ Intervention initiated' : 'Action recommended'}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleIntervene(student, 'rest')}
-                      className="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg transition-colors"
-                    >
-                      Log Intervention
-                    </button>
+                  <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <input
+                      type="text"
+                      value={interventionNotes[student.id] || ''}
+                      onChange={event => setInterventionNotes(prev => ({ ...prev, [student.id]: event.target.value }))}
+                      placeholder="Add intervention note (e.g., scheduled a check-in)"
+                      className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleIntervene(student, 'log')}
+                        disabled={isSaving || !interventionNotes[student.id]?.trim()}
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isSaving ? 'Saving…' : 'Log Intervention'}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-slate-500">Record a concrete follow-up action. Logs are saved to Firestore.</span>
                     {student.email && (
                       <button
                         onClick={() => handleIntervene(student, 'email')}
@@ -139,7 +174,7 @@ function LecturerBurnoutMonitor({ students, showToast }) {
   );
 }
 
-function LecturerDashboard({ users, tasks, completions, studySessions, showToast }) {
+function LecturerDashboard({ users, tasks, completions, studySessions, showToast, db, appId, lecturerId }) {
   const now = Date.now();
   const students = users.filter(student => student.role === 'student');
   const globalTasks = tasks.filter(t => t.type === 'global');
@@ -367,7 +402,7 @@ function LecturerDashboard({ users, tasks, completions, studySessions, showToast
       </Card>
 
       {/* Feature 4: Student Well-being & Quick Intervention Monitor */}
-      <LecturerBurnoutMonitor students={burnoutStudents} showToast={showToast} />
+      <LecturerBurnoutMonitor students={burnoutStudents} showToast={showToast} db={db} appId={appId} lecturerId={lecturerId} />
     </div>
   );
 }

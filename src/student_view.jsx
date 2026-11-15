@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, Bell, Trophy, BookOpen, Play, CheckSquare, Settings, Award, Square, Gamepad2, Plus, Paperclip, Link as LinkIcon, FileText, Image, Upload, X, Calendar, TrendingUp } from 'lucide-react';
+import { Clock, Bell, Trophy, BookOpen, Play, CheckSquare, Award, Square, Gamepad2, Plus, Paperclip, Link as LinkIcon, FileText, Image, Upload, X, Calendar, TrendingUp } from 'lucide-react';
 import { collection, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { calculateBurnoutRisk } from './burnout';
 
@@ -87,7 +87,6 @@ export function StudentView({ user, allTasks, completions, studySessions, curren
       {currentView === 'leaderboard' && <Leaderboard users={users} currentUser={user} />}
       {currentView === 'courses' && <Courses user={user} />}
       {currentView === 'energy' && <GamifiedEnergy user={user} energy={energy} setEnergy={setEnergy} onAwardExp={onAwardExp} showToast={showToast} />}
-      {currentView === 'settings' && <StudentSettings user={user} db={db} appId={appId} showToast={showToast} />}
     </>
   );
 }
@@ -1162,38 +1161,3 @@ function CourseCard({ title, description, icon, materials }) {
   );
 }
 
-function StudentSettings({ user, db, appId, showToast }) {
-  const [notifs, setNotifs] = useState(user.emailNotifsEnabled || false);
-
-  const toggleNotifs = async () => {
-    const newVal = !notifs;
-    setNotifs(newVal);
-    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', user.id), {
-      emailNotifsEnabled: newVal
-    });
-    showToast(newVal ? "Notifications enabled" : "Notifications disabled");
-  };
-
-  return (
-    <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
-      <h1 className="text-3xl font-bold text-slate-900 mb-8">Settings</h1>
-      
-      <Card>
-        <h3 className="text-lg font-bold text-slate-800 mb-4 border-b border-slate-100 pb-4">Notifications & Privacy</h3>
-        
-        <div className="flex items-center justify-between py-2">
-          <div>
-            <p className="font-semibold text-slate-800">Email Notifications for Deadlines</p>
-            <p className="text-sm text-slate-500 mt-1">Receive simulated Outlook emails at H-3 and H-1 before task deadlines.</p>
-          </div>
-          <button 
-            onClick={toggleNotifs}
-            className={`w-12 h-6 rounded-full transition-colors relative ${notifs ? 'bg-blue-600' : 'bg-slate-300'}`}
-          >
-            <div className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${notifs ? 'left-7' : 'left-1'}`} />
-          </button>
-        </div>
-      </Card>
-    </div>
-  );
-}
