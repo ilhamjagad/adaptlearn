@@ -316,10 +316,10 @@ function StudentProgress({ users, tasks, completions, db, appId, showToast }) {
         exp: Number(editExp)
       });
       setEditingStudentId(null);
-      showToast?.("Data mahasiswa berhasil diperbarui");
+      showToast?.("The student's data has been updated.");
     } catch (err) {
       console.error(err);
-      showToast?.("Gagal memperbarui data mahasiswa");
+      showToast?.("Failed to update the student's data.");
     }
   };
 
@@ -327,10 +327,10 @@ function StudentProgress({ users, tasks, completions, db, appId, showToast }) {
     if (!window.confirm(`Hapus mahasiswa ${studentName}?`)) return;
     try {
       await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', studentId));
-      showToast?.("Mahasiswa berhasil dihapus");
+      showToast?.("The student has been removed from the system.");
     } catch (err) {
       console.error(err);
-      showToast?.("Gagal menghapus mahasiswa");
+      showToast?.("Failed to remove the student.");
     }
   };
 

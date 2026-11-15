@@ -56,15 +56,27 @@ const Card = ({ children, className = '' }) => (
 
 export function StudentView({ user, allTasks, completions, studySessions, currentView, setCurrentView, nextDeadlineId, onAwardExp, onStudySessionComplete, onBreakLockChange, burnout, db, appId, showToast, users }) {
   const [showAllBadges, setShowAllBadges] = useState(false);
-  const [energy, setEnergy] = useState(() => Number(localStorage.getItem(`energy_${user.id}`) ?? 100));
+  const [energy, _setEnergy] = useState(() => Number(user.energy ?? localStorage.getItem(`energy_${user.id}`) ?? 100));
+
+  const setEnergy = async (valueOrUpdater) => {
+    _setEnergy(prev => {
+      const next = typeof valueOrUpdater === 'function' ? valueOrUpdater(prev) : valueOrUpdater;
+      const clamped = Math.max(0, Math.min(100, next));
+      updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', user.id), { energy: clamped }).catch(() => {});
+      localStorage.setItem(`energy_${user.id}`, String(clamped));
+      return clamped;
+    });
+  };
 
   useEffect(() => {
-    localStorage.setItem(`energy_${user.id}`, String(energy));
-  }, [user.id, energy]);
+    if (typeof user.energy === 'number') {
+      _setEnergy(user.energy);
+    }
+  }, [user.energy]);
 
   return (
     <>
-      {currentView === 'dashboard' && <StudentDashboard user={user} allTasks={allTasks} completions={completions} energy={energy} studySessions={studySessions} burnout={burnout || calculateBurnoutRisk(user, allTasks, completions, studySessions)} nextDeadlineId={nextDeadlineId} setCurrentView={setCurrentView} onSeeAllBadges={() => setShowAllBadges(true)} />}
+      {currentView === 'dashboard' && <StudentDashboard user={user} allTasks={allTasks} completions={completions} energy={energy} studySessions={studySessions} burnout={burnout || calculateBurnoutRisk(user, allTasks, completions, studySessions)} nextDeadlineId={nextDeadlineId} setCurrentView={setCurrentView} onSeeAllBadges={() => setShowAllBadges(true)} db={db} appId={appId} />}
       {showAllBadges && <AllBadgesModal exp={user.exp} onClose={() => setShowAllBadges(false)} />}
       {currentView === 'study' && <StudyCare user={user} db={db} appId={appId} showToast={showToast} onAwardExp={onAwardExp} onStudySessionComplete={onStudySessionComplete} onBreakLockChange={onBreakLockChange} burnout={burnout || calculateBurnoutRisk(user, allTasks, completions, studySessions)} energy={energy} setEnergy={setEnergy} />}
       {currentView === 'todo' && <TodoList user={user} allTasksList={allTasks} completions={completions} onComplete={(exp) => onAwardExp(exp, 'Task Completed')} db={db} appId={appId} showToast={showToast} highlightTaskId={nextDeadlineId} />}
@@ -76,7 +88,7 @@ export function StudentView({ user, allTasks, completions, studySessions, curren
   );
 }
 
-function StudentDashboard({ user, allTasks, completions, energy, studySessions, burnout, nextDeadlineId, setCurrentView, onSeeAllBadges }) {
+function StudentDashboard({ user, allTasks, completions, energy, studySessions, burnout, nextDeadlineId, setCurrentView, onSeeAllBadges, db, appId }) {
   const { level, progress, requiredExp } = getLevelProgress(user.exp);
   const badges = getUnlockedBadges(level);
   const nextBadge = getNextBadge(level);
