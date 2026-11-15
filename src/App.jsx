@@ -203,7 +203,8 @@ export default function AdaptLearn() {
       emailVerified: false
     });
     await signOut(auth);
-    throw new Error('Verification email sent. Please verify your email before signing in.');
+    // The error is caught and displayed as a toast in LoginView
+    throw new Error('Verification email sent. Please check your inbox and verify your email before signing in.');
   };
 
   const addStudySession = async (session) => {
