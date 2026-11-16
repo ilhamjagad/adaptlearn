@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, Bell, Trophy, Play, CheckSquare, Award, Square, Gamepad2, Plus, Minus, Paperclip, Link as LinkIcon, FileText, Image, X, Calendar, TrendingUp, Flame, Swords, Target, Sparkles, CheckCircle2, Coffee, RotateCcw, SkipForward, Sliders, ChevronDown, ChevronUp, Lightbulb, ArrowUpRight, Activity, BarChart3 } from 'lucide-react';
+import { Clock, Bell, Trophy, Play, CheckSquare, Award, Square, Gamepad2, Plus, Minus, Paperclip, Link as LinkIcon, FileText, Image, X, Calendar, TrendingUp, Flame, Swords, Target, Sparkles, CheckCircle2, Coffee, RotateCcw, SkipForward, Sliders, ChevronDown, ChevronUp, Lightbulb, ArrowUpRight, Activity, BarChart3, Brain, HelpCircle } from 'lucide-react';
 import { collection, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 
 const LEVEL_BADGES = [
@@ -650,6 +650,7 @@ function GamificationHub({ user, allTasks, completions, studySessions, users, db
   const { level, progress, requiredExp } = getLevelProgress(user.exp);
   const currentBadge = getBadge(level);
   const [claimingQuestId, setClaimingQuestId] = useState(null);
+  const [activeGameTab, setActiveGameTab] = useState('wordle');
 
   const todayKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());
   const todayStr = new Date().toDateString();
@@ -758,7 +759,7 @@ function GamificationHub({ user, allTasks, completions, studySessions, users, db
             <Sparkles className="text-blue-600" size={28} />
             Gamifications Hub
           </h1>
-          <p className="text-slate-500 mt-1">Maintain your study streak, complete quests, and defeat the Class Boss together!</p>
+          <p className="text-slate-500 mt-1">Maintain your study streak, complete quests, play brain games, and defeat the Class Boss!</p>
         </div>
         <button
           onClick={onSeeAllBadges}
@@ -883,6 +884,55 @@ function GamificationHub({ user, allTasks, completions, studySessions, users, db
         </div>
       </Card>
 
+      {/* Brain Games Arcade: Daily Wordle (#3) & Memory Card Match (#4) */}
+      <Card>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-100">
+          <div>
+            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+              <Gamepad2 size={22} className="text-indigo-600" />
+              Brain Games Arcade
+            </h2>
+            <p className="text-sm text-slate-500 mt-0.5">Take a quick brain break and earn daily bonus EXP!</p>
+          </div>
+
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={() => setActiveGameTab('wordle')}
+              className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                activeGameTab === 'wordle' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <HelpCircle size={14} /> Daily Wordle (+20 EXP)
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveGameTab('memory')}
+              className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                activeGameTab === 'memory' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Brain size={14} /> Memory Match (+15 EXP)
+            </button>
+          </div>
+        </div>
+
+        <div className="pt-6">
+          {activeGameTab === 'wordle' ? (
+            <CodeWordleGame
+              isRewardClaimed={!!claimedQuests['wordle_daily']}
+              onWinReward={() => handleClaimQuest('wordle_daily', 20, 'Daily Wordle')}
+              showToast={showToast}
+            />
+          ) : (
+            <MemoryMatchGame
+              isRewardClaimed={!!claimedQuests['memory_daily']}
+              onWinReward={() => handleClaimQuest('memory_daily', 15, 'Memory Card Match')}
+            />
+          )}
+        </div>
+      </Card>
+
       <Card className="border-red-200 bg-gradient-to-r from-red-50 via-white to-amber-50">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
           <div className="flex items-center gap-3.5">
@@ -919,6 +969,399 @@ function GamificationHub({ user, allTasks, completions, studySessions, users, db
           </div>
         </div>
       </Card>
+    </div>
+  );
+}
+
+// Game #3: General 5-Letter Wordle
+const WORDLE_BANK = [
+  { word: 'FOCUS', hint: 'Concentrating deeply on a single task' },
+  { word: 'BRAIN', hint: 'The organ inside your head used for thinking' },
+  { word: 'STUDY', hint: 'Devoting time to gain knowledge' },
+  { word: 'HABIT', hint: 'A routine behavior repeated regularly' },
+  { word: 'SMART', hint: 'Having quick intelligence or sharp wit' },
+  { word: 'CLOCK', hint: 'A device that measures and shows time' },
+  { word: 'GOALS', hint: 'Targets or ambitions you aim to achieve' },
+  { word: 'PEACE', hint: 'A state of calm, quiet, and tranquility' },
+  { word: 'EARTH', hint: 'The third planet from the Sun' },
+  { word: 'OCEAN', hint: 'A vast body of salt water covering the globe' },
+  { word: 'LIGHT', hint: 'Natural agent that makes things visible' },
+  { word: 'DREAM', hint: 'Thoughts and images occurring during sleep, or a big ambition' },
+  { word: 'SPARK', hint: 'A tiny fiery particle or sudden burst of inspiration' },
+  { word: 'TIGER', hint: 'A large striped wild cat native to Asia' },
+  { word: 'MUSIC', hint: 'Vocal or instrumental sounds combined in harmony' },
+];
+
+const KEYBOARD_ROWS = [
+  ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'],
+  ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'],
+  ['ENTER', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', 'DEL'],
+];
+
+function evaluateWordleGuess(guess, target) {
+  const result = Array(5).fill('absent');
+  const targetChars = target.split('');
+  const used = Array(5).fill(false);
+
+  for (let i = 0; i < 5; i++) {
+    if (guess[i] === targetChars[i]) {
+      result[i] = 'correct';
+      used[i] = true;
+    }
+  }
+  for (let i = 0; i < 5; i++) {
+    if (result[i] === 'correct') continue;
+    const foundIdx = targetChars.findIndex((ch, idx) => !used[idx] && ch === guess[i]);
+    if (foundIdx !== -1) {
+      result[i] = 'present';
+      used[foundIdx] = true;
+    }
+  }
+  return result;
+}
+
+function CodeWordleGame({ isRewardClaimed, onWinReward, showToast }) {
+  const [targetObj, setTargetObj] = useState(() => WORDLE_BANK[Math.floor(Math.random() * WORDLE_BANK.length)]);
+  const [guesses, setGuesses] = useState([]);
+  const [currentGuess, setCurrentGuess] = useState('');
+  const [status, setStatus] = useState('playing'); // 'playing' | 'won' | 'lost'
+  const [showHint, setShowHint] = useState(false);
+
+  const handleKeyInput = (key) => {
+    if (status !== 'playing') return;
+
+    if (key === 'DEL' || key === 'BACKSPACE') {
+      setCurrentGuess(prev => prev.slice(0, -1));
+      return;
+    }
+
+    if (key === 'ENTER') {
+      if (currentGuess.length !== 5) {
+        showToast?.('Enter a 5-letter word!');
+        return;
+      }
+      const nextGuesses = [...guesses, currentGuess];
+      setGuesses(nextGuesses);
+      setCurrentGuess('');
+
+      if (currentGuess === targetObj.word) {
+        setStatus('won');
+        if (!isRewardClaimed) {
+          onWinReward?.();
+        }
+      } else if (nextGuesses.length >= 6) {
+        setStatus('lost');
+      }
+      return;
+    }
+
+    if (/^[A-Z]$/.test(key) && currentGuess.length < 5) {
+      setCurrentGuess(prev => prev + key);
+    }
+  };
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const tag = e.target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      const k = e.key.toUpperCase();
+      if (k === 'ENTER' || k === 'BACKSPACE' || /^[A-Z]$/.test(k)) {
+        e.preventDefault();
+        handleKeyInput(k);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  });
+
+  const resetGame = () => {
+    const remaining = WORDLE_BANK.filter(item => item.word !== targetObj.word);
+    const next = remaining[Math.floor(Math.random() * remaining.length)] || WORDLE_BANK[0];
+    setTargetObj(next);
+    setGuesses([]);
+    setCurrentGuess('');
+    setStatus('playing');
+    setShowHint(false);
+  };
+
+  const keyStatuses = {};
+  guesses.forEach(g => {
+    const evals = evaluateWordleGuess(g, targetObj.word);
+    g.split('').forEach((ch, idx) => {
+      const prev = keyStatuses[ch];
+      const next = evals[idx];
+      if (next === 'correct') keyStatuses[ch] = 'correct';
+      else if (next === 'present' && prev !== 'correct') keyStatuses[ch] = 'present';
+      else if (!prev) keyStatuses[ch] = 'absent';
+    });
+  });
+
+  return (
+    <div className="max-w-md mx-auto space-y-5">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <h3 className="font-bold text-slate-900 text-base">Daily Wordle (5 Letters)</h3>
+          <p className="text-xs text-slate-500">Guess the hidden 5-letter word in 6 tries</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowHint(!showHint)}
+            className="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold hover:bg-amber-100 transition-colors"
+          >
+            {showHint ? 'Hide Hint' : 'Hint'}
+          </button>
+          <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
+            isRewardClaimed ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'
+          }`}>
+            {isRewardClaimed ? 'Daily EXP Claimed' : '+20 EXP Available'}
+          </span>
+        </div>
+      </div>
+
+      {showHint && (
+        <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200 text-xs text-amber-900 font-medium">
+          Clue: {targetObj.hint}
+        </div>
+      )}
+
+      {/* 6x5 Wordle Grid */}
+      <div className="grid grid-rows-6 gap-1.5 w-64 mx-auto">
+        {[...Array(6)].map((_, rowIdx) => {
+          const submittedGuess = guesses[rowIdx];
+          const isCurrentRow = rowIdx === guesses.length && status === 'playing';
+          const letters = submittedGuess
+            ? submittedGuess.split('')
+            : isCurrentRow
+            ? currentGuess.padEnd(5, ' ').split('')
+            : Array(5).fill('');
+          const rowEval = submittedGuess ? evaluateWordleGuess(submittedGuess, targetObj.word) : null;
+
+          return (
+            <div key={rowIdx} className="grid grid-cols-5 gap-1.5">
+              {letters.map((char, colIdx) => {
+                const state = rowEval?.[colIdx];
+                let tileStyle = 'bg-white border-slate-200 text-slate-800';
+                if (state === 'correct') tileStyle = 'bg-emerald-500 border-emerald-500 text-white';
+                else if (state === 'present') tileStyle = 'bg-amber-400 border-amber-400 text-white';
+                else if (state === 'absent') tileStyle = 'bg-slate-400 border-slate-400 text-white';
+                else if (char.trim()) tileStyle = 'bg-white border-blue-400 text-slate-900';
+
+                return (
+                  <div
+                    key={colIdx}
+                    className={`h-11 rounded-lg border-2 flex items-center justify-center font-extrabold text-lg uppercase select-none transition-colors ${tileStyle}`}
+                  >
+                    {char.trim()}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+
+      {status !== 'playing' && (
+        <div className={`p-3.5 rounded-xl border text-center space-y-2 ${
+          status === 'won' ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-slate-100 border-slate-200 text-slate-800'
+        }`}>
+          <p className="text-sm font-bold">
+            {status === 'won'
+              ? `Brilliant! You guessed "${targetObj.word}" in ${guesses.length}/6 tries!`
+              : `Out of tries! The word was "${targetObj.word}".`}
+          </p>
+          <button
+            type="button"
+            onClick={resetGame}
+            className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg transition-colors"
+          >
+            Play New Word
+          </button>
+        </div>
+      )}
+
+      {/* Virtual Keyboard */}
+      <div className="space-y-1.5 pt-1">
+        {KEYBOARD_ROWS.map((row, rIdx) => (
+          <div key={rIdx} className="flex justify-center gap-1">
+            {row.map(k => {
+              const kState = keyStatuses[k];
+              let btnStyle = 'bg-slate-100 hover:bg-slate-200 text-slate-800';
+              if (kState === 'correct') btnStyle = 'bg-emerald-500 text-white';
+              else if (kState === 'present') btnStyle = 'bg-amber-400 text-white';
+              else if (kState === 'absent') btnStyle = 'bg-slate-400 text-white';
+
+              const isWide = k === 'ENTER' || k === 'DEL';
+              return (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => handleKeyInput(k)}
+                  className={`${isWide ? 'px-2.5 text-[11px]' : 'w-8 sm:w-9 text-xs'} h-10 rounded-lg font-bold transition-colors ${btnStyle}`}
+                >
+                  {k}
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Game #4: Classic Icon Memory Card Match (General Theme)
+const MEMORY_ICONS = [
+  { pairId: 'rocket', icon: '🚀', label: 'Rocket' },
+  { pairId: 'compass', icon: '🧭', label: 'Compass' },
+  { pairId: 'trophy', icon: '🏆', label: 'Trophy' },
+  { pairId: 'fire', icon: '🔥', label: 'Flame' },
+  { pairId: 'crown', icon: '👑', label: 'Crown' },
+  { pairId: 'gem', icon: '💎', label: 'Diamond' },
+];
+
+function createShuffledDeck() {
+  const cards = [];
+  MEMORY_ICONS.forEach(item => {
+    cards.push({ uid: `${item.pairId}-1`, pairId: item.pairId, icon: item.icon, label: item.label });
+    cards.push({ uid: `${item.pairId}-2`, pairId: item.pairId, icon: item.icon, label: item.label });
+  });
+  for (let i = cards.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [cards[i], cards[j]] = [cards[j], cards[i]];
+  }
+  return cards;
+}
+
+function MemoryMatchGame({ isRewardClaimed, onWinReward }) {
+  const [deck, setDeck] = useState(() => createShuffledDeck());
+  const [flippedIndices, setFlippedIndices] = useState([]);
+  const [matchedPairIds, setMatchedPairIds] = useState([]);
+  const [moves, setMoves] = useState(0);
+  const [locked, setLocked] = useState(false);
+
+  const isCompleted = matchedPairIds.length === MEMORY_ICONS.length;
+
+  const handleCardClick = (index) => {
+    if (locked || isCompleted) return;
+    if (flippedIndices.includes(index)) return;
+    const card = deck[index];
+    if (matchedPairIds.includes(card.pairId)) return;
+
+    const nextFlipped = [...flippedIndices, index];
+    setFlippedIndices(nextFlipped);
+
+    if (nextFlipped.length === 2) {
+      setMoves(m => m + 1);
+      setLocked(true);
+      const [firstIdx, secondIdx] = nextFlipped;
+      const firstCard = deck[firstIdx];
+      const secondCard = deck[secondIdx];
+
+      if (firstCard.pairId === secondCard.pairId) {
+        const updatedMatches = [...matchedPairIds, firstCard.pairId];
+        setMatchedPairIds(updatedMatches);
+        setFlippedIndices([]);
+        setLocked(false);
+
+        if (updatedMatches.length === MEMORY_ICONS.length && !isRewardClaimed) {
+          onWinReward?.();
+        }
+      } else {
+        setTimeout(() => {
+          setFlippedIndices([]);
+          setLocked(false);
+        }, 750);
+      }
+    }
+  };
+
+  const resetDeck = () => {
+    setDeck(createShuffledDeck());
+    setFlippedIndices([]);
+    setMatchedPairIds([]);
+    setMoves(0);
+    setLocked(false);
+  };
+
+  return (
+    <div className="max-w-lg mx-auto space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="font-bold text-slate-900 text-base">Memory Card Match</h3>
+          <p className="text-xs text-slate-500">Flip the cards and find all 6 matching pairs</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700">
+            Moves: {moves}
+          </span>
+          <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
+            isRewardClaimed ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'
+          }`}>
+            {isRewardClaimed ? 'Daily EXP Claimed' : '+15 EXP Available'}
+          </span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-4 gap-3 max-w-md mx-auto">
+        {deck.map((card, idx) => {
+          const isMatched = matchedPairIds.includes(card.pairId);
+          const isFlipped = isMatched || flippedIndices.includes(idx);
+
+          return (
+            <button
+              key={card.uid}
+              type="button"
+              onClick={() => handleCardClick(idx)}
+              className={`h-20 rounded-xl border-2 flex flex-col items-center justify-center transition-all duration-200 select-none ${
+                isMatched
+                  ? 'bg-emerald-50 border-emerald-400 scale-[0.98]'
+                  : isFlipped
+                  ? 'bg-white border-blue-500 shadow-sm'
+                  : 'bg-gradient-to-br from-blue-600 to-indigo-700 border-blue-700 text-white hover:opacity-95'
+              }`}
+            >
+              {isFlipped ? (
+                <>
+                  <span className="text-2xl">{card.icon}</span>
+                  <span className="text-[10px] font-bold text-slate-600 mt-1">{card.label}</span>
+                </>
+              ) : (
+                <span className="text-lg font-extrabold text-white/75">?</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center justify-between pt-1">
+        <span className="text-xs font-semibold text-slate-500">
+          Matched: {matchedPairIds.length} / {MEMORY_ICONS.length} pairs
+        </span>
+        <button
+          type="button"
+          onClick={resetDeck}
+          className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition-colors inline-flex items-center gap-1.5"
+        >
+          <RotateCcw size={13} /> Shuffle Cards
+        </button>
+      </div>
+
+      {isCompleted && (
+        <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-center space-y-2">
+          <p className="text-sm font-bold">
+            Awesome! You matched all 6 pairs in {moves} moves!
+          </p>
+          <button
+            type="button"
+            onClick={resetDeck}
+            className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition-colors"
+          >
+            Play Again
+          </button>
+        </div>
+      )}
     </div>
   );
 }
