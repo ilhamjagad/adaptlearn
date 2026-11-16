@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { initializeApp } from "firebase/app";
 import { getAuth, onAuthStateChanged, signInWithCustomToken, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification } from "firebase/auth";
 import { getFirestore, collection, onSnapshot, doc, updateDoc, setDoc, getDoc, query, where, getDocs, addDoc } from "firebase/firestore";
-import { calculateBurnoutRisk } from './burnout';
-import { Clock, CheckSquare, Users, Trophy, LayoutDashboard, LogOut, Menu, X, UserRound, BookOpen, Zap } from 'lucide-react';
+import { Clock, CheckSquare, Users, Trophy, LayoutDashboard, LogOut, Menu, X, UserRound } from 'lucide-react';
 import { LoginView } from './login_view';
 import { StudentView } from './student_view';
 import { LecturerView } from './lecturer_view';
@@ -23,6 +22,7 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = firebaseConfig.appId;
+
 const getLevel = (exp) => {
   let level = 1;
   let remainingExp = Math.max(0, exp);
@@ -47,6 +47,7 @@ export default function AdaptLearn() {
   const [currentView, setCurrentView] = useState('dashboard');
   const [toast, setToast] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
   const completedTaskIds = completions.filter(completion => completion.userId === dbUser?.id).map(completion => completion.taskId);
   const nextDeadline = tasks
     .filter(task => (task.type === 'global' || task.ownerId === dbUser?.id) && !completedTaskIds.includes(task.id))
@@ -121,7 +122,6 @@ export default function AdaptLearn() {
   };
 
   const handleLogin = async (identifier, password, role) => {
-    // Special lecturer credentials
     if (role === 'lecturer' && identifier === 'dosen@uinjkt.ac.id' && password === 'dosen123') {
       const usersRef = collection(db, 'artifacts', appId, 'public', 'data', 'users');
       const q = query(usersRef, where('email', '==', 'dosen@uinjkt.ac.id'), where('role', '==', 'lecturer'));
@@ -129,7 +129,6 @@ export default function AdaptLearn() {
       
       let credential;
       if (snap.empty) {
-        // Create lecturer account if not exists
         credential = await createUserWithEmailAndPassword(auth, 'dosen@uinjkt.ac.id', 'dosen123');
         await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', credential.user.uid), {
           name: 'Viva Arifin, MMSI',
@@ -156,7 +155,6 @@ export default function AdaptLearn() {
 
     let email = identifier.trim();
     if (role === 'student' && !email.includes('@')) {
-      // Assume it's a NIM
       const usersRef = collection(db, 'artifacts', appId, 'public', 'data', 'users');
       const q = query(usersRef, where('nim', '==', email), where('role', '==', 'student'));
       const snap = await getDocs(q);
@@ -203,7 +201,6 @@ export default function AdaptLearn() {
       emailVerified: false
     });
     await signOut(auth);
-    // The error is caught and displayed as a toast in LoginView
     throw new Error('Verification email sent. Please check your inbox and verify your email before signing in.');
   };
 
@@ -274,8 +271,6 @@ export default function AdaptLearn() {
               <NavItem icon={<LayoutDashboard size={20} />} label="Dashboard" isActive={currentView === 'dashboard'} onClick={() => { setCurrentView('dashboard'); setSidebarOpen(false); }} />
               <NavItem icon={<Clock size={20} />} label={studyBreakLocked ? 'Study Care (Break)' : 'Study Care'} isActive={currentView === 'study'} onClick={() => { setCurrentView('study'); setSidebarOpen(false); }} />
               <NavItem icon={<CheckSquare size={20} />} label="To-Do List" isActive={currentView === 'todo'} onClick={() => { setCurrentView('todo'); setSidebarOpen(false); }} />
-              <NavItem icon={<BookOpen size={20} />} label="Courses" isActive={currentView === 'courses'} onClick={() => { setCurrentView('courses'); setSidebarOpen(false); }} />
-              <NavItem icon={<Zap size={20} />} label="Energy" isActive={currentView === 'energy'} onClick={() => { setCurrentView('energy'); setSidebarOpen(false); }} />
               <NavItem icon={<Trophy size={20} />} label="Leaderboard" isActive={currentView === 'leaderboard'} onClick={() => { setCurrentView('leaderboard'); setSidebarOpen(false); }} />
             </>
           ) : (
@@ -334,7 +329,6 @@ export default function AdaptLearn() {
               studySessions={studySessions}
               onStudySessionComplete={addStudySession}
               onBreakLockChange={setStudyBreakLocked}
-              onBurnoutChange={risk => setDbUser(current => current ? { ...current, burnoutScore: risk.score, burnoutStatus: risk.status, energy: current.energy } : current)}
               currentView={currentView} 
               setCurrentView={setCurrentView}
               nextDeadlineId={nextDeadline?.id}
@@ -343,7 +337,6 @@ export default function AdaptLearn() {
               appId={appId} 
               showToast={showToast} 
               users={allUsers}
-              burnout={calculateBurnoutRisk(dbUser, tasks, completions, studySessions, dbUser?.energy ?? 100)}
             />
           )}
           

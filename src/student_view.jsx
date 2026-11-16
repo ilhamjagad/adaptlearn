@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, Bell, Trophy, BookOpen, Play, CheckSquare, Award, Square, Gamepad2, Plus, Paperclip, Link as LinkIcon, FileText, Image, Upload, X, Calendar, TrendingUp } from 'lucide-react';
-import { collection, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { calculateBurnoutRisk } from './burnout';
+import { Clock, Bell, Trophy, Play, CheckSquare, Award, Square, Gamepad2, Plus, Paperclip, Link as LinkIcon, FileText, Image, X, Calendar, TrendingUp } from 'lucide-react';
+import { collection, addDoc, doc, deleteDoc } from 'firebase/firestore';
 
 const LEVEL_BADGES = [
   { name: 'EXP Trainee', icon: '🎯', color: 'bg-yellow-100 text-yellow-800' },
@@ -15,7 +14,9 @@ const LEVEL_BADGES = [
   { name: 'EXP Overlord', icon: '💎', color: 'bg-cyan-100 text-cyan-800' },
   { name: 'Supreme Archmage of AdaptLearn', icon: '👑', color: 'bg-rose-100 text-rose-800' },
 ];
+
 const LEVEL_REQ = (level) => level <= 3 ? 300 : level <= 6 ? 600 : level <= 8 ? 800 : level <= 10 ? 1000 : 2000;
+
 const getLevel = (exp) => {
   let level = 1;
   let remainingExp = Math.max(0, exp);
@@ -27,6 +28,7 @@ const getLevel = (exp) => {
   }
   return level;
 };
+
 const getLevelProgress = (exp) => {
   let level = 1;
   let remainingExp = Math.max(0, exp);
@@ -38,14 +40,17 @@ const getLevelProgress = (exp) => {
   }
   return { level: 100, progress: 0, requiredExp: 0 };
 };
+
 const getBadge = (level) => level >= 100
   ? { level: 100, name: 'Demon King', icon: '👹', color: 'bg-red-100 text-red-900' }
   : { level, ...LEVEL_BADGES[Math.min(level - 1, 9)] };
+
 const getUnlockedBadges = (level) => {
   const badgeLevels = [...Array(Math.min(level, 10)).keys()].map(index => index + 1);
   if (level >= 100) badgeLevels.push(100);
   return badgeLevels.map(getBadge);
 };
+
 const getNextBadge = (level) => level >= 100 ? null : getBadge(level + 1);
 
 const Card = ({ children, className = '' }) => (
@@ -54,44 +59,21 @@ const Card = ({ children, className = '' }) => (
   </div>
 );
 
-export function StudentView({ user, allTasks, completions, studySessions, currentView, setCurrentView, nextDeadlineId, onAwardExp, onStudySessionComplete, onBreakLockChange, onBurnoutChange, burnout, db, appId, showToast, users }) {
+export function StudentView({ user, allTasks, completions, studySessions, currentView, setCurrentView, nextDeadlineId, onAwardExp, onStudySessionComplete, onBreakLockChange, db, appId, showToast, users }) {
   const [showAllBadges, setShowAllBadges] = useState(false);
-  const [energy, _setEnergy] = useState(() => Number(user.energy ?? localStorage.getItem(`energy_${user.id}`) ?? 100));
-  const [sessionStartTime, setSessionStartTime] = useState(null);
-
-  const setEnergy = async (valueOrUpdater) => {
-    _setEnergy(prev => {
-      const next = typeof valueOrUpdater === 'function' ? valueOrUpdater(prev) : valueOrUpdater;
-      const clamped = Math.max(0, Math.min(100, next));
-      updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', user.id), { energy: clamped }).catch(() => {});
-      const activeMinutes = sessionStartTime ? Math.floor((Date.now() - sessionStartTime) / 60000) : 0;
-      const currentBurnout = calculateBurnoutRisk({ ...user, energy: clamped, activeStudyMinutesToday: activeMinutes }, allTasks, completions, studySessions);
-      onBurnoutChange?.(currentBurnout);
-      localStorage.setItem(`energy_${user.id}`, String(clamped));
-      return clamped;
-    });
-  };
-
-  useEffect(() => {
-    if (typeof user.energy === 'number') {
-      _setEnergy(user.energy);
-    }
-  }, [user.energy]);
 
   return (
     <>
-      {currentView === 'dashboard' && <StudentDashboard user={user} allTasks={allTasks} completions={completions} energy={energy} studySessions={studySessions} burnout={burnout || calculateBurnoutRisk(user, allTasks, completions, studySessions, energy)} nextDeadlineId={nextDeadlineId} setCurrentView={setCurrentView} onSeeAllBadges={() => setShowAllBadges(true)} db={db} appId={appId} />}
+      {currentView === 'dashboard' && <StudentDashboard user={user} allTasks={allTasks} completions={completions} studySessions={studySessions} setCurrentView={setCurrentView} onSeeAllBadges={() => setShowAllBadges(true)} />}
       {showAllBadges && <AllBadgesModal exp={user.exp} onClose={() => setShowAllBadges(false)} />}
-      {currentView === 'study' && <StudyCare user={user} allTasks={allTasks} completions={completions} studySessions={studySessions} db={db} appId={appId} showToast={showToast} onAwardExp={onAwardExp} onStudySessionComplete={onStudySessionComplete} onBreakLockChange={onBreakLockChange} onSessionStart={setSessionStartTime} burnout={burnout || calculateBurnoutRisk(user, allTasks, completions, studySessions, energy)} energy={energy} setEnergy={setEnergy} />}
+      {currentView === 'study' && <StudyCare user={user} onAwardExp={onAwardExp} onStudySessionComplete={onStudySessionComplete} onBreakLockChange={onBreakLockChange} />}
       {currentView === 'todo' && <TodoList user={user} allTasksList={allTasks} completions={completions} onComplete={(exp) => onAwardExp(exp, 'Task Completed')} db={db} appId={appId} showToast={showToast} highlightTaskId={nextDeadlineId} />}
       {currentView === 'leaderboard' && <Leaderboard users={users} currentUser={user} />}
-      {currentView === 'courses' && <Courses user={user} />}
-      {currentView === 'energy' && <GamifiedEnergy user={user} energy={energy} setEnergy={setEnergy} onAwardExp={onAwardExp} showToast={showToast} />}
     </>
   );
 }
 
-function StudentDashboard({ user, allTasks, completions, energy, studySessions, burnout, nextDeadlineId, setCurrentView, onSeeAllBadges, db, appId }) {
+function StudentDashboard({ user, allTasks, completions, studySessions, setCurrentView, onSeeAllBadges }) {
   const { level, progress, requiredExp } = getLevelProgress(user.exp);
   const badges = getUnlockedBadges(level);
   const nextBadge = getNextBadge(level);
@@ -107,7 +89,6 @@ function StudentDashboard({ user, allTasks, completions, energy, studySessions, 
         <h1 className="text-3xl font-bold text-slate-900">Welcome back, {user.name}!</h1>
         <p className="text-slate-500 mt-1">Ready to earn some EXP today?</p>
       </div>
-      <EnergyBar energy={energy} />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="md:col-span-2 bg-gradient-to-br from-blue-600 to-blue-900 text-white border-none relative overflow-hidden">
@@ -151,10 +132,7 @@ function StudentDashboard({ user, allTasks, completions, energy, studySessions, 
           </h3>
           {nextDeadline ? (
             <button
-              onClick={() => {
-                setCurrentView('todo');
-                // The TodoList will handle auto-scrolling to the task based on nextDeadlineId
-              }}
+              onClick={() => setCurrentView('todo')}
               className="bg-slate-50 p-4 rounded-xl border border-slate-100 hover:border-blue-500 hover:bg-blue-50/50 transition-all w-full text-left"
             >
               <p className="font-semibold text-slate-800 line-clamp-1">{nextDeadline.course ? `${nextDeadline.title} - ${nextDeadline.course}` : nextDeadline.title}</p>
@@ -171,8 +149,6 @@ function StudentDashboard({ user, allTasks, completions, energy, studySessions, 
           )}
         </Card>
       </div>
-
-      <BurnoutStatusCard risk={burnout} />
 
       <WeeklySummaryCard user={user} completions={completions} studySessions={studySessions} />
 
@@ -200,25 +176,6 @@ function StudentDashboard({ user, allTasks, completions, energy, studySessions, 
   );
 }
 
-function BurnoutStatusCard({ risk }) {
-  const styles = risk.color === 'red' ? 'border-red-200 bg-red-50 text-red-900' : risk.color === 'amber' ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-emerald-200 bg-emerald-50 text-emerald-900';
-  const recommendation = risk.score >= 60 ? 'Please take a break, rest, and contact your lecturer or student support if you need help.' : risk.score >= 30 ? 'Consider spreading study sessions and starting assignments earlier.' : 'Your recent study pattern looks balanced. Keep taking regular breaks.';
-
-  return (
-    <Card className={`border ${styles}`}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-bold">Well-being: {risk.status}</h2>
-          <p className="mt-1 text-sm">Burnout risk score: {risk.score}/100</p>
-        </div>
-        <span className="text-2xl font-black">{risk.score}</span>
-      </div>
-      <p className="mt-3 text-sm">{recommendation}</p>
-      {risk.triggers.length > 0 && <ul className="mt-3 list-disc space-y-1 pl-5 text-sm">{risk.triggers.map(trigger => <li key={trigger}>{trigger}</li>)}</ul>}
-    </Card>
-  );
-}
-
 function WeeklySummaryCard({ user, completions, studySessions }) {
   const now = Date.now();
   const oneWeekAgo = now - 7 * 24 * 60 * 60 * 1000;
@@ -241,12 +198,8 @@ function WeeklySummaryCard({ user, completions, studySessions }) {
   const weeklyExpTotal = taskExp + studyExp;
 
   const activeDaysSet = new Set();
-  weeklySessions.forEach(s => {
-    activeDaysSet.add(new Date(s.completedAt).toDateString());
-  });
-  weeklyCompletions.forEach(c => {
-    activeDaysSet.add(new Date(c.completedAt).toDateString());
-  });
+  weeklySessions.forEach(s => activeDaysSet.add(new Date(s.completedAt).toDateString()));
+  weeklyCompletions.forEach(c => activeDaysSet.add(new Date(c.completedAt).toDateString()));
   const activeDaysCount = activeDaysSet.size;
 
   return (
@@ -363,51 +316,22 @@ function AllBadgesModal({ exp, onClose }) {
   );
 }
 
-function EnergyBar({ energy }) {
-  const color = energy > 60 ? 'bg-emerald-500' : energy > 30 ? 'bg-amber-500' : 'bg-red-500';
-  return (
-    <div className="w-full text-left">
-      <div className="mb-1 flex justify-between text-sm font-semibold text-slate-700"><span>Energy</span><span>{energy}%</span></div>
-      <div className="h-3 overflow-hidden rounded-full bg-slate-200"><div className={`h-full ${color} transition-all duration-500`} style={{ width: `${energy}%` }} /></div>
-    </div>
-  );
-}
-
-function StudyCare({ user, allTasks, completions, studySessions, db, appId, showToast, burnout, energy, setEnergy, onAwardExp, onStudySessionComplete, onBreakLockChange, onSessionStart }) {
+function StudyCare({ user, onAwardExp, onStudySessionComplete, onBreakLockChange }) {
   const [minutes, setMinutes] = useState(25);
   const [timeLeft, setTimeLeft] = useState(25 * 60);
   const [isActive, setIsActive] = useState(false);
   const [mode, setMode] = useState('setup');
-  const [breakSecondsLeft, setBreakSecondsLeft] = useState(0);
-  const [isForcedBreak, setIsForcedBreak] = useState(false);
   const [sessionStartedAt, setSessionStartedAt] = useState(null);
-  const risk = burnout || { score: 0, status: 'Low Risk' };
-
-  useEffect(() => {
-    if (mode !== 'break' || breakSecondsLeft <= 0) return undefined;
-    const interval = setInterval(() => setBreakSecondsLeft(seconds => Math.max(0, seconds - 1)), 1000);
-    return () => clearInterval(interval);
-  }, [mode, breakSecondsLeft]);
-
-  useEffect(() => {
-    if (mode === 'break' && breakSecondsLeft === 0) {
-      onBreakLockChange?.(false);
-      setMode('setup');
-    }
-  }, [mode, breakSecondsLeft, onBreakLockChange]);
 
   useEffect(() => {
     let interval;
     if (isActive && timeLeft > 0) {
       interval = setInterval(() => {
         setTimeLeft(current => Math.max(0, current - 1));
-        setEnergy(current => Math.max(0, current - 1));
       }, 1000);
-    } else if (!isActive && mode === 'break' && breakSecondsLeft > 0) {
-      interval = setInterval(() => setEnergy(current => Math.min(100, current + 2)), 1000);
     }
     return () => clearInterval(interval);
-  }, [isActive, timeLeft, mode, breakSecondsLeft]);
+  }, [isActive, timeLeft]);
 
   useEffect(() => {
     if (isActive && timeLeft === 0) {
@@ -417,15 +341,9 @@ function StudyCare({ user, allTasks, completions, studySessions, db, appId, show
   }, [isActive, timeLeft]);
 
   const startTimer = () => {
-    const sessionMinutes = risk?.score >= 60 ? Math.min(minutes, 45) : minutes;
-    if (sessionMinutes !== minutes) {
-      showToast?.('High burnout risk: focus sessions are limited to 45 minutes.');
-      setMinutes(sessionMinutes);
-    }
     const startedAt = new Date().toISOString();
     setSessionStartedAt(startedAt);
-    onSessionStart?.(Date.now());
-    setTimeLeft(sessionMinutes * 60);
+    setTimeLeft(minutes * 60);
     setIsActive(true);
     setMode('study');
   };
@@ -442,6 +360,7 @@ function StudyCare({ user, allTasks, completions, studySessions, db, appId, show
     setIsActive(false);
     setTimeLeft(minutes * 60);
     setMode('setup');
+    onBreakLockChange?.(false);
   };
 
   const handleSessionComplete = async () => {
@@ -450,20 +369,9 @@ function StudyCare({ user, allTasks, completions, studySessions, db, appId, show
     await onStudySessionComplete?.({
       userId: user.id,
       durationMinutes: minutes,
-        startedAt: sessionStartedAt || completedAt,
-        completedAt,
-      });
-      onSessionStart?.(null);
-      const updatedRisk = calculateBurnoutRisk(user, allTasks, completions, [...studySessions, { userId: user.id, durationMinutes: minutes, completedAt }], Math.max(0, energy - minutes));
-    setRisk(updatedRisk);
-    if (updatedRisk.score >= 60) {
-      setIsForcedBreak(true);
-      setBreakSecondsLeft(15 * 60);
-      onBreakLockChange?.(true);
-    } else {
-      setIsForcedBreak(false);
-      setBreakSecondsLeft(0);
-    }
+      startedAt: sessionStartedAt || completedAt,
+      completedAt,
+    });
     setMode('break');
   };
 
@@ -488,8 +396,6 @@ function StudyCare({ user, allTasks, completions, studySessions, db, appId, show
                 <Clock size={40} className="text-blue-600" />
               </div>
               <h2 className="text-2xl font-bold text-slate-800">Set Target Time</h2>
-              <EnergyBar energy={energy} />
-              {risk.score >= 60 && <p className="text-sm font-semibold text-red-700">High burnout risk detected. Limit your study session to 45 minutes and take a 15-minute break.</p>}
               <div className="flex items-center justify-center gap-4">
                 {[15, 25, 30, 45, 60].map(m => (
                   <button
@@ -507,8 +413,7 @@ function StudyCare({ user, allTasks, completions, studySessions, db, appId, show
               </button>
             </div>
           ) : (
-              <div className="space-y-8">
-              <EnergyBar energy={energy} />
+            <div className="space-y-8">
               <div className="relative w-64 h-64 mx-auto">
                 <svg className="w-full h-full transform -rotate-90">
                   <circle cx="128" cy="128" r="120" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-slate-100" />
@@ -544,21 +449,19 @@ function StudyCare({ user, allTasks, completions, studySessions, db, appId, show
       )}
 
       {mode === 'break' && (
-        <Card className={`text-center p-8 ${isForcedBreak ? 'bg-amber-50 border-amber-200' : 'bg-white border-blue-100'}`}>
+        <Card className="text-center p-8 bg-white border-blue-100">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-teal-100 text-teal-600 rounded-full mb-4">
             <Gamepad2 size={32} />
           </div>
-          <h2 className="text-2xl font-bold text-slate-800 mb-2">{isForcedBreak ? 'Recovery Break Required' : 'Great Job! Time for a Break.'}</h2>
-          <p className="text-slate-600 mb-4">{isForcedBreak ? 'High burnout risk detected. Please rest before continuing.' : `You earned ${minutes} EXP. Rest your mind before the next session.`}</p>
-          {isForcedBreak && <p className="mb-6 text-3xl font-bold text-amber-800">{formatTime(breakSecondsLeft)}</p>}
+          <h2 className="text-2xl font-bold text-slate-800 mb-2">Great Job! Time for a Break.</h2>
+          <p className="text-slate-600 mb-4">You earned {minutes} EXP. Rest your mind before the next session.</p>
           
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 max-w-sm mx-auto mb-8">
             <h3 className="font-bold text-slate-700 mb-4">Mini-Game: Tic-Tac-Toe</h3>
             <TicTacToe />
           </div>
 
-          {!isForcedBreak && <button onClick={resetTimer} className="px-8 py-3 bg-teal-600 text-white font-bold rounded-full hover:bg-teal-700 transition-colors">End Break & Return</button>}
-          {isForcedBreak && <p className="text-sm font-medium text-amber-800">Study Care unlocks when the 15-minute break is complete.</p>}
+          <button onClick={resetTimer} className="px-8 py-3 bg-teal-600 text-white font-bold rounded-full hover:bg-teal-700 transition-colors">End Break & Return</button>
         </Card>
       )}
     </div>
@@ -620,7 +523,6 @@ function TodoList({ user, allTasksList, completions, onComplete, db, appId, show
   const [submission, setSubmission] = useState({});
   const [newTask, setNewTask] = useState({ title: '', description: '', deadline: '' });
 
-  // Auto-scroll to highlighted task
   useEffect(() => {
     if (highlightTaskId) {
       const element = document.getElementById(`task-${highlightTaskId}`);
@@ -780,7 +682,7 @@ function TodoList({ user, allTasksList, completions, onComplete, db, appId, show
               else { badgeColor = 'bg-green-100 text-green-700'; expHint = '+20 EXP'; }
             }
 
-             return (
+            return (
               <Card key={task.id} id={`task-${task.id}`} className={`p-4 transition-all ${task.isCompleted ? 'opacity-60 bg-slate-50' : 'hover:shadow-md'}`}>
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
@@ -841,50 +743,50 @@ function TodoList({ user, allTasksList, completions, onComplete, db, appId, show
                       }}
                       className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded-lg text-sm"
                     >
-                       Submit Assignment
+                      Submit Assignment
                     </button>
                   </div>
                 ) : (
-                <div className="mt-3">
-                  <div>
-                    {task.description && <p className="text-sm text-slate-500 mb-3">{task.description}</p>}
-                    {task.attachment?.data && (
-                      <a href={task.attachment.data} download={task.attachment.name} className="mb-3 inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:underline">
-                        <Paperclip size={15} /> {task.attachment.name || 'Download attachment'}
-                      </a>
-                    )}
-                    {task.resourceUrl && (
-                      <a href={task.resourceUrl} target="_blank" rel="noreferrer" className="mb-3 flex items-center gap-2 text-sm font-medium text-blue-600 hover:underline break-all">
-                        <LinkIcon size={15} /> Open resource link
-                      </a>
-                    )}
-                    
-                    <div className="flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-4 text-sm font-medium">
-                        <span className={`flex items-center gap-1 px-2 py-1 rounded-md ${task.isCompleted ? 'bg-slate-200 text-slate-500' : badgeColor}`}>
-                          <Clock size={14} />
-                          {task.isCompleted ? 'Completed' : `Due: ${new Date(task.deadline).toLocaleDateString('en-GB')}`}
-                        </span>
-                        {!task.isCompleted && (
-                          <span className="text-blue-600 flex items-center gap-1">
-                            <Award size={14} /> {expHint}
+                  <div className="mt-3">
+                    <div>
+                      {task.description && <p className="text-sm text-slate-500 mb-3">{task.description}</p>}
+                      {task.attachment?.data && (
+                        <a href={task.attachment.data} download={task.attachment.name} className="mb-3 inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:underline">
+                          <Paperclip size={15} /> {task.attachment.name || 'Download attachment'}
+                        </a>
+                      )}
+                      {task.resourceUrl && (
+                        <a href={task.resourceUrl} target="_blank" rel="noreferrer" className="mb-3 flex items-center gap-2 text-sm font-medium text-blue-600 hover:underline break-all">
+                          <LinkIcon size={15} /> Open resource link
+                        </a>
+                      )}
+                      
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-4 text-sm font-medium">
+                          <span className={`flex items-center gap-1 px-2 py-1 rounded-md ${task.isCompleted ? 'bg-slate-200 text-slate-500' : badgeColor}`}>
+                            <Clock size={14} />
+                            {task.isCompleted ? 'Completed' : `Due: ${new Date(task.deadline).toLocaleDateString('en-GB')}`}
                           </span>
-                        )}
-                      </div>
-                      <div className="flex items-center justify-center shrink-0">
-                        {task.type === 'personal' ? (
-                          <button onClick={() => completeTask(task)} disabled={task.isCompleted} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1 disabled:opacity-50">
-                            <CheckSquare size={14} /> Done
-                          </button>
-                        ) : (
-                          <button onClick={() => setAttachTaskId(attachTaskId === task.id ? null : task.id)} className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg text-xs font-semibold flex items-center gap-1">
-                            <Paperclip size={14} /> Attach
-                          </button>
-                        )}
+                          {!task.isCompleted && (
+                            <span className="text-blue-600 flex items-center gap-1">
+                              <Award size={14} /> {expHint}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center justify-center shrink-0">
+                          {task.type === 'personal' ? (
+                            <button onClick={() => completeTask(task)} disabled={task.isCompleted} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1 disabled:opacity-50">
+                              <CheckSquare size={14} /> Done
+                            </button>
+                          ) : (
+                            <button onClick={() => setAttachTaskId(attachTaskId === task.id ? null : task.id)} className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg text-xs font-semibold flex items-center gap-1">
+                              <Paperclip size={14} /> Attach
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
                 )}
               </Card>
             )
@@ -968,196 +870,3 @@ function Leaderboard({ users, currentUser }) {
     </div>
   );
 }
-
-function GamifiedEnergy({ user, energy, setEnergy, onAwardExp, showToast }) {
-  const [game, setGame] = useState(null);
-  const [sequence, setSequence] = useState([]);
-  const [input, setInput] = useState([]);
-  const [litTile, setLitTile] = useState(null);
-  const [target, setTarget] = useState(0);
-  const [answer, setAnswer] = useState('');
-  const [locked, setLocked] = useState(false);
-  const energyFull = energy >= 100;
-
-  const finishGame = amount => {
-    setEnergy(value => Math.min(100, value + amount));
-    onAwardExp(amount, 'Completed an energy mini-game');
-    showToast?.(`Game complete: +${amount}% energy and +${amount} EXP.`);
-    setGame(null);
-  };
-
-  const startMemory = () => {
-    const tiles = Array.from({ length: 4 }, () => Math.floor(Math.random() * 4));
-    setSequence(tiles);
-    setInput([]);
-    setLocked(true);
-    setGame('memory');
-    tiles.forEach((tile, index) => setTimeout(() => {
-      setLitTile(tile);
-      setTimeout(() => {
-        setLitTile(null);
-        if (index === tiles.length - 1) setLocked(false);
-      }, 650);
-    }, index * 1000 + 300));
-  };
-
-  const chooseTile = tile => {
-    if (locked) return;
-    const next = [...input, tile];
-    setInput(next);
-    if (sequence[next.length - 1] !== tile) {
-      setLocked(true);
-      showToast?.('Incorrect sequence. Restarting game.');
-      setTimeout(startMemory, 800);
-    } else if (next.length === sequence.length) {
-      setLocked(true);
-      setTimeout(() => finishGame(15), 400);
-    }
-  };
-
-  const startMath = () => {
-    setTarget(Math.floor(Math.random() * 50) + 25);
-    setAnswer('');
-    setGame('math');
-  };
-
-  const checkMath = event => {
-    event.preventDefault();
-    if (Number(answer) === target * 2) finishGame(10);
-    else showToast?.('Incorrect answer. Try again.');
-  };
-
-  return (
-    <div className="w-full space-y-6 animate-fade-in">
-      <div><h1 className="text-3xl font-bold text-slate-900">Energy Recharge</h1><p className="mt-1 text-slate-500">Play a short brain game to restore energy and earn EXP.</p></div>
-      <Card>
-        <EnergyBar energy={energy} />
-        {energyFull && <p className="mt-4 text-sm font-semibold text-emerald-700">Energy is full. Spend some energy before playing again.</p>}
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          <button disabled={energyFull} onClick={startMemory} className="rounded-xl border border-blue-200 bg-blue-50 p-5 text-left hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"><p className="font-bold text-blue-900">Memory Sequence</p><p className="mt-1 text-sm text-slate-600">Repeat the four highlighted tiles. Reward: 15% energy + 15 EXP.</p></button>
-          <button disabled={energyFull} onClick={startMath} className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-left hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"><p className="font-bold text-emerald-900">Quick Math</p><p className="mt-1 text-sm text-slate-600">Solve a multiplication challenge. Reward: 10% energy + 10 EXP.</p></button>
-        </div>
-      </Card>
-      {game === 'memory' && <Card className="text-center"><h2 className="mb-2 text-xl font-bold text-slate-800">Memory Sequence</h2><p className="mb-4 text-sm text-slate-500">{locked ? 'Watch the highlighted tiles, then repeat them.' : `Your turn: ${input.length}/${sequence.length}`}</p><div className="mx-auto grid w-64 grid-cols-2 gap-3">{['bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500'].map((color, index) => <button key={index} disabled={locked} onClick={() => chooseTile(index)} className={`h-24 rounded-xl transition-all duration-150 ${color} ${litTile === index ? 'scale-105 brightness-150 ring-4 ring-white shadow-[0_0_30px_rgba(255,255,255,0.9)]' : 'brightness-75'} disabled:cursor-not-allowed`} aria-label={`Tile ${index + 1}`} />)}</div><button onClick={() => setGame(null)} className="mt-5 text-sm text-slate-500 hover:text-slate-800">Cancel</button></Card>}
-      {game === 'math' && <Card><form onSubmit={checkMath} className="mx-auto max-w-sm space-y-4 text-center"><h2 className="text-xl font-bold text-slate-800">Quick Math</h2><p className="text-slate-600">What is {target} × 2?</p><input autoFocus type="number" required value={answer} onChange={event => setAnswer(event.target.value)} className="w-full rounded-lg border border-slate-300 px-4 py-3 text-center" /><button className="w-full rounded-lg bg-blue-600 py-3 font-bold text-white hover:bg-blue-700">Check Answer</button><button type="button" onClick={() => setGame(null)} className="text-sm text-slate-500 hover:text-slate-800">Cancel</button></form></Card>}
-    </div>
-  );
-}
-
-function Courses({ user }) {
-  return (
-    <div className="space-y-6 animate-fade-in">
-      <div>
-        <h1 className="text-3xl font-bold text-slate-900">Courses</h1>
-        <p className="text-slate-500 mt-1">Browse and access your course materials</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <CourseCard
-          title="Data Structures and Algorithms"
-          description="Learn fundamental data structures and algorithms for problem solving."
-          icon="📚"
-          materials={[
-            { type: 'document', title: 'Introduction to Data Structures', url: '#' },
-            { type: 'video', title: 'Arrays and Linked Lists', url: '#' },
-            { type: 'document', title: 'Trees and Graphs', url: '#' },
-            { type: 'video', title: 'Sorting Algorithms', url: '#' },
-          ]}
-        />
-        <CourseCard
-          title="Calculus II"
-          description="Advanced calculus concepts including integration techniques and series."
-          icon="📐"
-          materials={[
-            { type: 'document', title: 'Integration Techniques', url: '#' },
-            { type: 'video', title: 'Series and Sequences', url: '#' },
-            { type: 'document', title: 'Polar Coordinates', url: '#' },
-          ]}
-        />
-        <CourseCard
-          title="Software Engineering"
-          description="Software development methodologies and best practices."
-          icon="💻"
-          materials={[
-            { type: 'document', title: 'Software Development Life Cycle', url: '#' },
-            { type: 'video', title: 'Design Patterns', url: '#' },
-            { type: 'document', title: 'Testing Strategies', url: '#' },
-          ]}
-        />
-        <CourseCard
-          title="English"
-          description="Academic English for computer science and technology."
-          icon="📝"
-          materials={[
-            { type: 'document', title: 'Technical Writing', url: '#' },
-            { type: 'video', title: 'Presentation Skills', url: '#' },
-            { type: 'document', title: 'Technical Vocabulary', url: '#' },
-          ]}
-        />
-        <CourseCard
-          title="Computer Organization and Architecture"
-          description="Computer hardware organization and architecture principles."
-          icon="🖥️"
-          materials={[
-            { type: 'document', title: 'CPU Architecture', url: '#' },
-            { type: 'video', title: 'Memory Hierarchy', url: '#' },
-            { type: 'document', title: 'Instruction Sets', url: '#' },
-          ]}
-        />
-        <CourseCard
-          title="Computer Networks"
-          description="Network protocols, architectures, and communication systems."
-          icon="🌐"
-          materials={[
-            { type: 'document', title: 'Network Protocols', url: '#' },
-            { type: 'video', title: 'TCP/IP Model', url: '#' },
-            { type: 'document', title: 'Network Security', url: '#' },
-          ]}
-        />
-        <CourseCard
-          title="Database Systems"
-          description="Database design, SQL, and database management systems."
-          icon="🗄️"
-          materials={[
-            { type: 'document', title: 'Relational Model', url: '#' },
-            { type: 'video', title: 'SQL Queries', url: '#' },
-            { type: 'document', title: 'Normalization', url: '#' },
-          ]}
-        />
-      </div>
-    </div>
-  );
-}
-
-function CourseCard({ title, description, icon, materials }) {
-  return (
-    <Card className="p-6 hover:shadow-lg transition-shadow">
-      <div className="flex items-start gap-4 mb-4">
-        <div className="w-14 h-14 bg-blue-100 rounded-xl flex items-center justify-center text-3xl">
-          {icon}
-        </div>
-        <div>
-          <h3 className="text-lg font-bold text-slate-900">{title}</h3>
-          <p className="text-sm text-slate-500 mt-1">{description}</p>
-        </div>
-      </div>
-      <div className="space-y-2">
-        {materials.map((material, index) => (
-          <a
-            key={index}
-            href={material.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"
-          >
-            <span className="text-lg">
-              {material.type === 'document' ? '📄' : material.type === 'video' ? '🎥' : '🔗'}
-            </span>
-            <span className="text-sm font-medium text-slate-700">{material.title}</span>
-          </a>
-        ))}
-      </div>
-    </Card>
-  );
-}
-

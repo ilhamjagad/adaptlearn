@@ -1,9 +1,7 @@
 import React, { useState } from 'react';
-import { Clock, CheckSquare, Users, Plus, Trophy, Edit2, Trash2, Save, X, Paperclip, Link as LinkIcon, AlertTriangle, AlertCircle, TrendingUp, Mail, HeartPulse } from 'lucide-react';
+import { Clock, CheckSquare, Users, Plus, Trophy, Edit2, Trash2, Save, X, Paperclip, Link as LinkIcon, AlertCircle, TrendingUp } from 'lucide-react';
 import { doc, deleteDoc, updateDoc, collection, addDoc } from 'firebase/firestore';
 import emailjs from '@emailjs/browser';
-
-import { calculateBurnoutRisk as burnoutRiskUtil } from './burnout';
 
 const emailJsConfig = {
   serviceId: import.meta.env.VITE_EMAILJS_SERVICE_ID,
@@ -20,7 +18,7 @@ const Card = ({ children, className = '' }) => (
 export function LecturerView({ user, tasks, completions, studySessions, currentView, db, appId, showToast, users }) {
   return (
     <>
-      {currentView === 'dashboard' && <LecturerDashboard users={users} tasks={tasks} completions={completions} studySessions={studySessions} showToast={showToast} db={db} appId={appId} lecturerId={user.id} />}
+      {currentView === 'dashboard' && <LecturerDashboard users={users} tasks={tasks} completions={completions} studySessions={studySessions} />}
       {currentView === 'tasks' && <TaskManagement db={db} appId={appId} tasks={tasks} lecturerId={user.id} showToast={showToast} students={users.filter(u => u.role === 'student' && u.email)} />}
       {currentView === 'progress' && <StudentProgress users={users} tasks={tasks} completions={completions} db={db} appId={appId} showToast={showToast} />}
       {currentView === 'leaderboard' && <Leaderboard users={users} currentUser={user} />}
@@ -28,168 +26,13 @@ export function LecturerView({ user, tasks, completions, studySessions, currentV
   );
 }
 
-function LecturerBurnoutMonitor({ students, showToast, db, appId, lecturerId }) {
-  const [interventionNotes, setInterventionNotes] = useState({});
-  const [savingStudentId, setSavingStudentId] = useState(null);
-
-  const handleIntervene = async (student, actionType) => {
-    if (actionType === 'log') {
-      const note = interventionNotes[student.id]?.trim();
-      if (!note) {
-        showToast?.('Add an intervention note before logging.');
-        return;
-      }
-      setSavingStudentId(student.id);
-      try {
-        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'interventions'), {
-          studentId: student.id,
-          studentName: student.name,
-          lecturerId,
-          note,
-          createdAt: new Date().toISOString(),
-        });
-        showToast?.(`Intervention for ${student.name} logged.`);
-        setInterventionNotes(prev => ({ ...prev, [student.id]: '' }));
-      } catch (error) {
-        console.error('Failed to log intervention:', error);
-        showToast?.('Failed to save intervention note.');
-      } finally {
-        setSavingStudentId(null);
-      }
-      return;
-    }
-    if (actionType === 'email') {
-      const subject = encodeURIComponent('Academic Support & Well-being Check-in - AdaptLearn');
-      const body = encodeURIComponent(
-        `Dear ${student.name},\n\nI noticed from our learning analytics that you may be experiencing high workload or study fatigue recently. Please remember that your health and well-being come first.\n\nLet me know if you need any adjustments or support with your course assignments.\n\nBest regards,\nViva Arifin, MMSI`
-      );
-      window.open(`mailto:${student.email || ''}?subject=${subject}&body=${body}`, '_blank');
-      showToast?.(`Email check-in opened for ${student.name}`);
-    } else {
-      showToast?.(`Rest recommendation recorded for ${student.name}`);
-    }
-  };
-
-  return (
-    <Card>
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-            <HeartPulse size={20} className="text-red-500" />
-            Student Well-being & Quick Intervention Monitor
-          </h2>
-          <p className="text-sm text-slate-500 mt-0.5">Students exhibiting Moderate or High burnout risk indicators</p>
-        </div>
-        <span className="text-xs font-semibold px-2.5 py-1 bg-red-50 text-red-700 rounded-full">
-          {students.length} At-Risk
-        </span>
-      </div>
-
-      {!students.length ? (
-        <div className="p-6 text-center text-slate-500 bg-slate-50 rounded-xl border border-slate-100">
-          No students currently show moderate or high risk indicators. The class is maintaining healthy study habits!
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {students.map(({ student, risk }) => {
-            const isHigh = risk.score >= 60;
-            const containerStyle = isHigh
-              ? 'bg-red-50/70 border-red-200 text-red-950'
-              : 'bg-amber-50/70 border-amber-200 text-amber-950';
-            const badgeStyle = isHigh
-              ? 'bg-red-100 text-red-800 border-red-200'
-              : 'bg-amber-100 text-amber-800 border-amber-200';
-            const isSaving = savingStudentId === student.id;
-
-            return (
-              <div key={student.id} className={`p-4 rounded-xl border ${containerStyle} space-y-3 transition-all`}>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h4 className="font-bold text-slate-900 text-base">{student.name}</h4>
-                      {student.nim && <span className="text-xs text-slate-500">({student.nim})</span>}
-                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${badgeStyle}`}>
-                        {risk.status}
-                      </span>
-                    </div>
-                    {student.email && (
-                      <p className="text-xs text-slate-600 mt-0.5">{student.email}</p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-2xl font-black text-slate-900">{risk.score}</span>
-                    <span className="text-xs text-slate-500 font-semibold">/ 100</span>
-                  </div>
-                </div>
-
-                {risk.triggers && risk.triggers.length > 0 && (
-                  <div className="bg-white/80 rounded-lg p-3 border border-slate-200/60">
-                    <p className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Identified Triggers:</p>
-                    <ul className="list-disc list-inside space-y-0.5 text-xs text-slate-700">
-                      {risk.triggers.map((trigger, idx) => (
-                        <li key={idx}>{trigger}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-200/60">
-                  <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <input
-                      type="text"
-                      value={interventionNotes[student.id] || ''}
-                      onChange={event => setInterventionNotes(prev => ({ ...prev, [student.id]: event.target.value }))}
-                      placeholder="Add intervention note (e.g., scheduled a check-in)"
-                      className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    />
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleIntervene(student, 'log')}
-                        disabled={isSaving || !interventionNotes[student.id]?.trim()}
-                        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {isSaving ? 'Saving…' : 'Log Intervention'}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs text-slate-500">Record a concrete follow-up action. Logs are saved to Firestore.</span>
-                    {student.email && (
-                      <button
-                        onClick={() => handleIntervene(student, 'email')}
-                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors"
-                      >
-                        <Mail size={13} />
-                        Contact Student
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </Card>
-  );
-}
-
-function LecturerDashboard({ users, tasks, completions, studySessions, showToast, db, appId, lecturerId }) {
+function LecturerDashboard({ users, tasks, completions, studySessions }) {
   const now = Date.now();
   const students = users.filter(student => student.role === 'student');
   const globalTasks = tasks.filter(t => t.type === 'global');
   const studentsCount = students.length;
   const globalTasksCount = globalTasks.length;
 
-  const burnoutStudents = students.map(student => ({
-    student,
-    risk: burnoutRiskUtil(student, tasks, completions, studySessions, student.energy ?? 100),
-  })).filter(entry => entry.risk.score >= 30).sort((a, b) => b.risk.score - a.risk.score);
-
-  const highRiskCount = burnoutStudents.filter(b => b.risk.score >= 60).length;
-  const moderateRiskCount = burnoutStudents.filter(b => b.risk.score >= 30 && b.risk.score < 60).length;
-
-  // Feature 3: Class Activity Summary (Past 7 Days)
   const oneWeekAgo = now - 7 * 24 * 60 * 60 * 1000;
   const weeklyClassSessions = (studySessions || []).filter(
     s => s.completedAt && new Date(s.completedAt).getTime() >= oneWeekAgo
@@ -204,7 +47,6 @@ function LecturerDashboard({ users, tasks, completions, studySessions, showToast
     c => c.completedAt && new Date(c.completedAt).getTime() >= oneWeekAgo
   ).length;
 
-  // Feature 1: Upcoming Deadline Alerts (within 3 days or Overdue)
   const deadlineAlerts = globalTasks.map(task => {
     const deadlineTime = new Date(task.deadline).getTime();
     const diffDays = Math.ceil((deadlineTime - now) / (1000 * 60 * 60 * 24));
@@ -224,7 +66,6 @@ function LecturerDashboard({ users, tasks, completions, studySessions, showToast
   }).filter(item => item.isOverdue || item.isUrgent)
     .sort((a, b) => a.diffDays - b.diffDays);
 
-  // Feature 2: Assignment Submission Tracker
   const submissionTracker = globalTasks.map(task => {
     const submittedCount = completions.filter(c => c.taskId === task.id).length;
     const totalCount = students.length;
@@ -241,11 +82,10 @@ function LecturerDashboard({ users, tasks, completions, studySessions, showToast
     <div className="space-y-6 animate-fade-in">
       <div>
         <h1 className="text-3xl font-bold text-slate-900">Lecturer Overview</h1>
-        <p className="text-slate-500 mt-1">Monitor class activity, submissions, deadline alerts, and student well-being.</p>
+        <p className="text-slate-500 mt-1">Monitor class activity, submissions, and deadline alerts.</p>
       </div>
 
-      {/* Feature 3: Class Activity Summary & Top Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
         <Card className="bg-gradient-to-br from-blue-600 to-blue-900 text-white border-none">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-blue-100 font-medium text-sm">Total Students</h3>
@@ -278,20 +118,8 @@ function LecturerDashboard({ users, tasks, completions, studySessions, showToast
             Total self-study (past 7 days)
           </p>
         </Card>
-
-        <Card className={`border-none text-white ${highRiskCount > 0 ? 'bg-gradient-to-br from-red-600 to-red-900' : 'bg-gradient-to-br from-emerald-600 to-emerald-900'}`}>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-medium text-sm opacity-90">Burnout Alerts</h3>
-            <AlertTriangle size={22} className="opacity-90" />
-          </div>
-          <p className="text-3xl font-bold">{highRiskCount + moderateRiskCount}</p>
-          <p className="text-xs mt-2 opacity-90">
-            {highRiskCount} High Risk · {moderateRiskCount} Moderate Risk
-          </p>
-        </Card>
       </div>
 
-      {/* Feature 1: Upcoming Deadline Alerts */}
       <Card>
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -352,7 +180,6 @@ function LecturerDashboard({ users, tasks, completions, studySessions, showToast
         )}
       </Card>
 
-      {/* Feature 2: Assignment Submission Tracker */}
       <Card>
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -400,9 +227,6 @@ function LecturerDashboard({ users, tasks, completions, studySessions, showToast
           </div>
         )}
       </Card>
-
-      {/* Feature 4: Student Well-being & Quick Intervention Monitor */}
-      <LecturerBurnoutMonitor students={burnoutStudents} showToast={showToast} db={db} appId={appId} lecturerId={lecturerId} />
     </div>
   );
 }
@@ -526,35 +350,35 @@ function TaskManagement({ db, appId, tasks, lecturerId, showToast, students }) {
               <input required type="date" value={newTask.deadline} onChange={e => setNewTask({...newTask, deadline: e.target.value})} className="w-full px-4 py-2 rounded-lg border border-slate-300" />
             </div>
           </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Instructions / Description</label>
-              <textarea value={newTask.description} onChange={e => setNewTask({...newTask, description: e.target.value})} className="w-full px-4 py-2 rounded-lg border border-slate-300 h-24 resize-none" placeholder="Details about the assignment..." />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center gap-2"><LinkIcon size={16} /> Resource URL</label>
-              <input type="url" value={newTask.resourceUrl} onChange={e => setNewTask({...newTask, resourceUrl: e.target.value})} className="w-full px-4 py-2 rounded-lg border border-slate-300" placeholder="https://..." />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center gap-2"><Paperclip size={16} /> Attachment</label>
-              <label className="inline-flex items-center px-4 py-2 rounded-lg border border-slate-300 text-sm font-medium text-slate-700 cursor-pointer hover:bg-slate-100">
-                {attachment?.name || 'Choose File'}
-                <input type="file" onChange={e => setAttachment(e.target.files?.[0] || null)} className="hidden" />
-              </label>
-            </div>
-            <div className="flex flex-col sm:flex-row sm:items-center gap-4 pt-2">
-              <button type="submit" disabled={uploading} className="px-6 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-colors w-full sm:w-auto disabled:opacity-50">
-                {uploading ? 'Uploading...' : 'Assign to All Students'}
-              </button>
-              <label className="inline-flex items-center gap-2 cursor-pointer text-sm font-medium text-slate-700 select-none">
-                <input
-                  type="checkbox"
-                  checked={sendNotification}
-                  onChange={e => setSendNotification(e.target.checked)}
-                  className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
-                />
-                <span>Send email notification to students</span>
-              </label>
-            </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Instructions / Description</label>
+            <textarea value={newTask.description} onChange={e => setNewTask({...newTask, description: e.target.value})} className="w-full px-4 py-2 rounded-lg border border-slate-300 h-24 resize-none" placeholder="Details about the assignment..." />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center gap-2"><LinkIcon size={16} /> Resource URL</label>
+            <input type="url" value={newTask.resourceUrl} onChange={e => setNewTask({...newTask, resourceUrl: e.target.value})} className="w-full px-4 py-2 rounded-lg border border-slate-300" placeholder="https://..." />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center gap-2"><Paperclip size={16} /> Attachment</label>
+            <label className="inline-flex items-center px-4 py-2 rounded-lg border border-slate-300 text-sm font-medium text-slate-700 cursor-pointer hover:bg-slate-100">
+              {attachment?.name || 'Choose File'}
+              <input type="file" onChange={e => setAttachment(e.target.files?.[0] || null)} className="hidden" />
+            </label>
+          </div>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4 pt-2">
+            <button type="submit" disabled={uploading} className="px-6 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-colors w-full sm:w-auto disabled:opacity-50">
+              {uploading ? 'Uploading...' : 'Assign to All Students'}
+            </button>
+            <label className="inline-flex items-center gap-2 cursor-pointer text-sm font-medium text-slate-700 select-none">
+              <input
+                type="checkbox"
+                checked={sendNotification}
+                onChange={e => setSendNotification(e.target.checked)}
+                className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+              />
+              <span>Send email notification to students</span>
+            </label>
+          </div>
         </form>
       </Card>
 
@@ -775,7 +599,7 @@ function StudentProgress({ users, tasks, completions, db, appId, showToast }) {
                   })}
                 </div>
               </Card>
-            )
+            );
           })}
         </div>
       )}
@@ -795,6 +619,7 @@ const LEVEL_BADGES = [
   { name: 'EXP Overlord', icon: '💎', color: 'bg-cyan-100 text-cyan-800' },
   { name: 'Supreme Archmage of AdaptLearn', icon: '👑', color: 'bg-rose-100 text-rose-800' },
 ];
+
 const getLevel = (exp) => {
   let level = 1;
   let remainingExp = Math.max(0, exp);
@@ -806,9 +631,11 @@ const getLevel = (exp) => {
   }
   return level;
 };
+
 const getBadge = (level) => level >= 100
   ? { level: 100, name: 'Demon King', icon: '👹', color: 'bg-red-100 text-red-900' }
   : { level, ...LEVEL_BADGES[Math.min(level - 1, 9)] };
+
 const getUnlockedBadges = (level) => Array.from({ length: level }, (_, index) => getBadge(index + 1));
 
 function Leaderboard({ users, currentUser }) {
