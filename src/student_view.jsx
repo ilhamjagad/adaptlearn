@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, Bell, Trophy, Play, CheckSquare, Award, Square, Gamepad2, Plus, Paperclip, Link as LinkIcon, FileText, Image, X, Calendar, TrendingUp } from 'lucide-react';
-import { collection, addDoc, doc, deleteDoc } from 'firebase/firestore';
+import { Clock, Bell, Trophy, Play, CheckSquare, Award, Square, Gamepad2, Plus, Paperclip, Link as LinkIcon, FileText, Image, X, Calendar, TrendingUp, Flame, Swords, Target, Sparkles, CheckCircle2 } from 'lucide-react';
+import { collection, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 
 const LEVEL_BADGES = [
   { name: 'EXP Trainee', icon: '🎯', color: 'bg-yellow-100 text-yellow-800' },
@@ -68,6 +68,21 @@ export function StudentView({ user, allTasks, completions, studySessions, curren
       {showAllBadges && <AllBadgesModal exp={user.exp} onClose={() => setShowAllBadges(false)} />}
       {currentView === 'study' && <StudyCare user={user} onAwardExp={onAwardExp} onStudySessionComplete={onStudySessionComplete} onBreakLockChange={onBreakLockChange} />}
       {currentView === 'todo' && <TodoList user={user} allTasksList={allTasks} completions={completions} onComplete={(exp) => onAwardExp(exp, 'Task Completed')} db={db} appId={appId} showToast={showToast} highlightTaskId={nextDeadlineId} />}
+      {currentView === 'gamification' && (
+        <GamificationHub
+          user={user}
+          allTasks={allTasks}
+          completions={completions}
+          studySessions={studySessions}
+          users={users}
+          db={db}
+          appId={appId}
+          showToast={showToast}
+          onAwardExp={onAwardExp}
+          onSeeAllBadges={() => setShowAllBadges(true)}
+          setCurrentView={setCurrentView}
+        />
+      )}
       {currentView === 'leaderboard' && <Leaderboard users={users} currentUser={user} />}
     </>
   );
@@ -170,6 +185,291 @@ function StudentDashboard({ user, allTasks, completions, studySessions, setCurre
           <button onClick={onSeeAllBadges} className="text-sm font-semibold text-blue-600 hover:text-blue-800 hover:underline">
             See All Badges
           </button>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function GamificationHub({ user, allTasks, completions, studySessions, users, db, appId, showToast, onAwardExp, onSeeAllBadges, setCurrentView }) {
+  const { level, progress, requiredExp } = getLevelProgress(user.exp);
+  const currentBadge = getBadge(level);
+  const [claimingQuestId, setClaimingQuestId] = useState(null);
+
+  // Gunakan format YYYY-MM-DD (WIB) agar aman sebagai key nested field di Firestore
+  const todayKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());
+  const todayStr = new Date().toDateString();
+
+  // 1. Hitung Daily Streak (dari studySessions & completions di Firestore)
+  const activeDates = new Set();
+  (studySessions || []).filter(s => s.userId === user.id && s.completedAt).forEach(s => {
+    activeDates.add(new Date(s.completedAt).toDateString());
+  });
+  (completions || []).filter(c => c.userId === user.id && c.completedAt).forEach(c => {
+    activeDates.add(new Date(c.completedAt).toDateString());
+  });
+
+  let streakCount = 0;
+  const checkDate = new Date();
+  if (!activeDates.has(checkDate.toDateString())) {
+    checkDate.setDate(checkDate.getDate() - 1);
+  }
+  while (activeDates.has(checkDate.toDateString())) {
+    streakCount++;
+    checkDate.setDate(checkDate.getDate() - 1);
+  }
+
+  const streakMultiplier = streakCount >= 7 ? '1.5x' : streakCount >= 3 ? '1.2x' : '1.0x';
+
+  // 2. Data Aktivitas Hari Ini & Minggu Ini untuk Quests (dari Firestore)
+  const todayStudyMinutes = (studySessions || [])
+    .filter(s => s.userId === user.id && s.completedAt && new Date(s.completedAt).toDateString() === todayStr)
+    .reduce((acc, s) => acc + Number(s.durationMinutes || 0), 0);
+
+  const todayTasksCompleted = (completions || [])
+    .filter(c => c.userId === user.id && c.completedAt && new Date(c.completedAt).toDateString() === todayStr)
+    .length;
+
+  const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const earlySubmissionsThisWeek = (completions || []).filter(c => {
+    if (c.userId !== user.id || !c.completedAt || new Date(c.completedAt).getTime() < oneWeekAgo) return false;
+    return Number(c.expAwarded || 0) >= 15;
+  }).length;
+
+  // 3. Status Klaim Quest langsung dari Firestore (dokumen user)
+  const claimedQuests = user.claimedQuests?.[todayKey] || {};
+
+  const handleClaimQuest = async (questId, expReward, title) => {
+    if (claimedQuests[questId] || claimingQuestId === questId) return;
+    setClaimingQuestId(questId);
+    try {
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', user.id), {
+        [`claimedQuests.${todayKey}.${questId}`]: true
+      });
+      await onAwardExp(expReward, `Quest Completed: ${title}`);
+    } catch (err) {
+      console.error('Failed to claim quest:', err);
+      showToast?.('Failed to claim quest reward.');
+    } finally {
+      setClaimingQuestId(null);
+    }
+  };
+
+  const quests = [
+    {
+      id: 'daily_focus_25',
+      type: 'Daily Quest',
+      title: 'Deep Focus Scholar',
+      description: 'Complete at least 25 minutes of Study Care today.',
+      current: Math.min(todayStudyMinutes, 25),
+      target: 25,
+      unit: 'mins',
+      reward: 30,
+    },
+    {
+      id: 'daily_task_1',
+      type: 'Daily Quest',
+      title: 'Task Crusher',
+      description: 'Complete at least 1 task from your To-Do List today.',
+      current: Math.min(todayTasksCompleted, 1),
+      target: 1,
+      unit: 'task',
+      reward: 25,
+    },
+    {
+      id: 'weekly_early_2',
+      type: 'Weekly Quest',
+      title: 'Early Bird Strategist',
+      description: 'Submit 2 assignments at least 3 days before the deadline this week.',
+      current: Math.min(earlySubmissionsThisWeek, 2),
+      target: 2,
+      unit: 'tasks',
+      reward: 100,
+    },
+  ];
+
+  // 4. Class Boss Raid Calculation (dari Firestore)
+  const studentsCount = Math.max(1, (users || []).filter(u => u.role === 'student').length);
+  const globalTasks = (allTasks || []).filter(t => t.type === 'global');
+  const globalTaskIds = new Set(globalTasks.map(t => t.id));
+  const totalClassSubmissions = (completions || []).filter(c => globalTaskIds.has(c.taskId)).length;
+
+  const bossMaxHp = Math.max(500, globalTasks.length * studentsCount * 100);
+  const totalDamageDealt = totalClassSubmissions * 100;
+  const bossRemainingHp = Math.max(0, bossMaxHp - totalDamageDealt);
+  const bossHpPercent = Math.round((bossRemainingHp / bossMaxHp) * 100);
+  const myRaidDamage = (completions || []).filter(c => c.userId === user.id && globalTaskIds.has(c.taskId)).length * 100;
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900 flex items-center gap-2.5">
+            <Sparkles className="text-blue-600" size={28} />
+            Gamifications Hub
+          </h1>
+          <p className="text-slate-500 mt-1">Maintain your study streak, complete quests, and defeat the Class Boss together!</p>
+        </div>
+        <button
+          onClick={onSeeAllBadges}
+          className="px-4 py-2.5 bg-blue-50 text-blue-700 font-semibold rounded-xl hover:bg-blue-100 transition-colors text-sm flex items-center gap-2 self-start sm:self-auto"
+        >
+          <Trophy size={16} /> View All Rank Badges
+        </button>
+      </div>
+
+      {/* Top Row: Rank Card & Daily Streak */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <Card className="md:col-span-2 bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-950 text-white border-none">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 rounded-2xl bg-white/10 flex items-center justify-center text-4xl border border-white/15">
+                {currentBadge.icon}
+              </div>
+              <div>
+                <span className="text-xs font-bold uppercase tracking-wider text-blue-300">Current Title</span>
+                <h2 className="text-2xl font-extrabold text-white">{currentBadge.name}</h2>
+                <p className="text-sm text-slate-300">Level {level} · Total {user.exp} EXP</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6">
+            <div className="flex justify-between text-xs font-semibold text-blue-200 mb-1.5">
+              <span>Level {level} Progress</span>
+              <span>{level >= 100 ? 'MAX LEVEL' : `${progress} / ${requiredExp} EXP`}</span>
+            </div>
+            <div className="w-full h-3 bg-white/15 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-blue-400 to-cyan-300 rounded-full transition-all duration-700"
+                style={{ width: `${level >= 100 ? 100 : (progress / requiredExp) * 100}%` }}
+              />
+            </div>
+          </div>
+        </Card>
+
+        <Card className="bg-gradient-to-br from-amber-500 to-orange-600 text-white border-none flex flex-col justify-between">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-amber-100">Study Streak</p>
+              <h3 className="text-4xl font-black mt-1">{streakCount} {streakCount === 1 ? 'Day' : 'Days'}</h3>
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center">
+              <Flame size={28} className="text-white" fill="currentColor" />
+            </div>
+          </div>
+          <div className="mt-4 pt-3 border-t border-white/20 flex items-center justify-between text-sm">
+            <span className="text-amber-100">Streak Bonus Tier</span>
+            <span className="font-extrabold bg-white/20 px-2.5 py-0.5 rounded-full">{streakMultiplier} EXP</span>
+          </div>
+        </Card>
+      </div>
+
+      {/* Quests Section */}
+      <Card>
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+              <Target size={22} className="text-blue-600" />
+              Active Quests & Missions
+            </h2>
+            <p className="text-sm text-slate-500 mt-0.5">Complete study targets to claim bonus EXP rewards</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {quests.map(quest => {
+            const isReady = quest.current >= quest.target;
+            const isClaimed = !!claimedQuests[quest.id];
+            const isClaiming = claimingQuestId === quest.id;
+            const pct = Math.min(100, Math.round((quest.current / quest.target) * 100));
+
+            return (
+              <div key={quest.id} className="p-5 rounded-2xl border border-slate-200 bg-slate-50/70 flex flex-col justify-between gap-4">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={`text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full ${quest.type === 'Daily Quest' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                      {quest.type}
+                    </span>
+                    <span className="text-xs font-extrabold text-amber-600">+{quest.reward} EXP</span>
+                  </div>
+                  <h3 className="font-bold text-slate-900 text-base">{quest.title}</h3>
+                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">{quest.description}</p>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <div className="flex justify-between text-xs font-semibold text-slate-600 mb-1">
+                      <span>Progress</span>
+                      <span>{quest.current} / {quest.target} {quest.unit}</span>
+                    </div>
+                    <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full transition-all duration-500 ${isReady ? 'bg-emerald-500' : 'bg-blue-600'}`} style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+
+                  {isClaimed ? (
+                    <button disabled className="w-full py-2 bg-emerald-100 text-emerald-700 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 cursor-default">
+                      <CheckCircle2 size={15} /> Claimed
+                    </button>
+                  ) : isReady ? (
+                    <button
+                      disabled={isClaiming}
+                      onClick={() => handleClaimQuest(quest.id, quest.reward, quest.title)}
+                      className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs shadow-sm transition-colors disabled:opacity-50"
+                    >
+                      {isClaiming ? 'Claiming...' : `Claim +${quest.reward} EXP`}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setCurrentView(quest.id === 'daily_focus_25' ? 'study' : 'todo')}
+                      className="w-full py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-semibold rounded-xl text-xs transition-colors"
+                    >
+                      Go to Task
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
+      {/* Class Boss Raid Section */}
+      <Card className="border-red-200 bg-gradient-to-r from-red-50 via-white to-amber-50">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-14 h-14 rounded-2xl bg-red-950 text-amber-400 flex items-center justify-center text-3xl shadow-md">
+              🐉
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-extrabold uppercase tracking-wider px-2.5 py-0.5 bg-red-100 text-red-700 rounded-full flex items-center gap-1">
+                  <Swords size={12} /> Class Boss Raid
+                </span>
+              </div>
+              <h2 className="text-xl font-extrabold text-slate-900 mt-1">Semester Deadline Leviathan</h2>
+              <p className="text-xs text-slate-600">Every class assignment submitted deals <strong>100 DMG</strong> to the Boss!</p>
+            </div>
+          </div>
+
+          <div className="text-left md:text-right bg-white px-4 py-2.5 rounded-xl border border-red-100 shadow-sm">
+            <p className="text-xs text-slate-500 font-medium">Your Raid Contribution</p>
+            <p className="text-lg font-black text-red-600">{myRaidDamage} DMG</p>
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <div className="flex justify-between text-xs font-bold text-slate-700">
+            <span>Boss HP: {bossRemainingHp.toLocaleString()} / {bossMaxHp.toLocaleString()}</span>
+            <span>{bossRemainingHp === 0 ? 'DEFEATED! 🎉' : `${bossHpPercent}% Remaining`}</span>
+          </div>
+          <div className="w-full h-4 bg-slate-200 rounded-full overflow-hidden p-0.5">
+            <div
+              className="h-full bg-gradient-to-r from-red-600 to-orange-500 rounded-full transition-all duration-700"
+              style={{ width: `${bossHpPercent}%` }}
+            />
+          </div>
         </div>
       </Card>
     </div>

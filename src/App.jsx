@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { initializeApp } from "firebase/app";
 import { getAuth, onAuthStateChanged, signInWithCustomToken, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification } from "firebase/auth";
 import { getFirestore, collection, onSnapshot, doc, updateDoc, setDoc, getDoc, query, where, getDocs, addDoc } from "firebase/firestore";
-import { Clock, CheckSquare, Users, Trophy, LayoutDashboard, LogOut, Menu, X, UserRound } from 'lucide-react';
+import { Clock, CheckSquare, Users, Trophy, LayoutDashboard, LogOut, Menu, X, UserRound, Sparkles } from 'lucide-react';
 import { LoginView } from './login_view';
 import { StudentView } from './student_view';
 import { LecturerView } from './lecturer_view';
@@ -271,6 +271,7 @@ export default function AdaptLearn() {
               <NavItem icon={<LayoutDashboard size={20} />} label="Dashboard" isActive={currentView === 'dashboard'} onClick={() => { setCurrentView('dashboard'); setSidebarOpen(false); }} />
               <NavItem icon={<Clock size={20} />} label={studyBreakLocked ? 'Study Care (Break)' : 'Study Care'} isActive={currentView === 'study'} onClick={() => { setCurrentView('study'); setSidebarOpen(false); }} />
               <NavItem icon={<CheckSquare size={20} />} label="To-Do List" isActive={currentView === 'todo'} onClick={() => { setCurrentView('todo'); setSidebarOpen(false); }} />
+              <NavItem icon={<Sparkles size={20} />} label="Gamifications" isActive={currentView === 'gamification'} onClick={() => { setCurrentView('gamification'); setSidebarOpen(false); }} />
               <NavItem icon={<Trophy size={20} />} label="Leaderboard" isActive={currentView === 'leaderboard'} onClick={() => { setCurrentView('leaderboard'); setSidebarOpen(false); }} />
             </>
           ) : (
