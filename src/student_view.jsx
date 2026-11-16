@@ -888,21 +888,21 @@ function TodoList({ user, allTasksList, completions, onComplete, db, appId, show
       onComplete(expAwarded);
       setAttachTaskId(null);
       setSubmission({});
-      showToast?.("Tugas berhasil dikumpulkan!");
+      showToast?.("Task submitted successfully!");
     } catch (err) {
       console.error(err);
-      showToast?.("Gagal mengumpulkan tugas.");
+      showToast?.("Failed to submit task.");
     }
   };
 
   const clearCompletedTasks = async () => {
     const completedPersonalTasks = myTasks.filter(task => task.type === 'personal' && myCompletions.some(completion => completion.taskId === task.id));
     if (!completedPersonalTasks.length) {
-      showToast?.('Tidak ada tugas personal selesai untuk dihapus.');
+      showToast?.('There are no completed personal tasks to delete.');
       return;
     }
     await Promise.all(completedPersonalTasks.map(task => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tasks', task.id))));
-    showToast?.(`${completedPersonalTasks.length} tugas selesai dihapus.`);
+    showToast?.(`${completedPersonalTasks.length} completed personal tasks deleted.`);
   };
 
   const completeTask = async (task) => {
