@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, Bell, Trophy, Play, CheckSquare, Award, Square, Gamepad2, Plus, Paperclip, Link as LinkIcon, FileText, Image, X, Calendar, TrendingUp, Flame, Swords, Target, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Clock, Bell, Trophy, Play, CheckSquare, Award, Square, Gamepad2, Plus, Minus, Paperclip, Link as LinkIcon, FileText, Image, X, Calendar, TrendingUp, Flame, Swords, Target, Sparkles, CheckCircle2, Coffee, RotateCcw, SkipForward, Sliders, ChevronDown, ChevronUp } from 'lucide-react';
 import { collection, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 
 const LEVEL_BADGES = [
@@ -196,11 +196,9 @@ function GamificationHub({ user, allTasks, completions, studySessions, users, db
   const currentBadge = getBadge(level);
   const [claimingQuestId, setClaimingQuestId] = useState(null);
 
-  // Gunakan format YYYY-MM-DD (WIB) agar aman sebagai key nested field di Firestore
   const todayKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());
   const todayStr = new Date().toDateString();
 
-  // 1. Hitung Daily Streak (dari studySessions & completions di Firestore)
   const activeDates = new Set();
   (studySessions || []).filter(s => s.userId === user.id && s.completedAt).forEach(s => {
     activeDates.add(new Date(s.completedAt).toDateString());
@@ -221,7 +219,6 @@ function GamificationHub({ user, allTasks, completions, studySessions, users, db
 
   const streakMultiplier = streakCount >= 7 ? '1.5x' : streakCount >= 3 ? '1.2x' : '1.0x';
 
-  // 2. Data Aktivitas Hari Ini & Minggu Ini untuk Quests (dari Firestore)
   const todayStudyMinutes = (studySessions || [])
     .filter(s => s.userId === user.id && s.completedAt && new Date(s.completedAt).toDateString() === todayStr)
     .reduce((acc, s) => acc + Number(s.durationMinutes || 0), 0);
@@ -236,7 +233,6 @@ function GamificationHub({ user, allTasks, completions, studySessions, users, db
     return Number(c.expAwarded || 0) >= 15;
   }).length;
 
-  // 3. Status Klaim Quest langsung dari Firestore (dokumen user)
   const claimedQuests = user.claimedQuests?.[todayKey] || {};
 
   const handleClaimQuest = async (questId, expReward, title) => {
@@ -288,7 +284,6 @@ function GamificationHub({ user, allTasks, completions, studySessions, users, db
     },
   ];
 
-  // 4. Class Boss Raid Calculation (dari Firestore)
   const studentsCount = Math.max(1, (users || []).filter(u => u.role === 'student').length);
   const globalTasks = (allTasks || []).filter(t => t.type === 'global');
   const globalTaskIds = new Set(globalTasks.map(t => t.id));
@@ -318,7 +313,6 @@ function GamificationHub({ user, allTasks, completions, studySessions, users, db
         </button>
       </div>
 
-      {/* Top Row: Rank Card & Daily Streak */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="md:col-span-2 bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-950 text-white border-none">
           <div className="flex items-center justify-between mb-4">
@@ -365,7 +359,6 @@ function GamificationHub({ user, allTasks, completions, studySessions, users, db
         </Card>
       </div>
 
-      {/* Quests Section */}
       <Card>
         <div className="flex items-center justify-between mb-5">
           <div>
@@ -435,7 +428,6 @@ function GamificationHub({ user, allTasks, completions, studySessions, users, db
         </div>
       </Card>
 
-      {/* Class Boss Raid Section */}
       <Card className="border-red-200 bg-gradient-to-r from-red-50 via-white to-amber-50">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
           <div className="flex items-center gap-3.5">
@@ -617,11 +609,38 @@ function AllBadgesModal({ exp, onClose }) {
 }
 
 function StudyCare({ user, onAwardExp, onStudySessionComplete, onBreakLockChange }) {
-  const [minutes, setMinutes] = useState(25);
+  const [focusMins, setFocusMins] = useState(25);
+  const [shortBreakMins, setShortBreakMins] = useState(5);
+  const [longBreakMins, setLongBreakMins] = useState(15);
+  const [cyclesBeforeLongBreak, setCyclesBeforeLongBreak] = useState(4);
+
+  const [phase, setPhase] = useState('setup'); // 'setup' | 'focus' | 'shortBreak' | 'longBreak'
+  const [completedCycles, setCompletedCycles] = useState(0);
   const [timeLeft, setTimeLeft] = useState(25 * 60);
   const [isActive, setIsActive] = useState(false);
-  const [mode, setMode] = useState('setup');
   const [sessionStartedAt, setSessionStartedAt] = useState(null);
+  const [showMiniGame, setShowMiniGame] = useState(false);
+
+  const playNotificationChime = () => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(660, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.18);
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.5);
+    } catch {
+      // Abaikan jika browser memblokir autoplay audio
+    }
+  };
 
   useEffect(() => {
     let interval;
@@ -636,43 +655,104 @@ function StudyCare({ user, onAwardExp, onStudySessionComplete, onBreakLockChange
   useEffect(() => {
     if (isActive && timeLeft === 0) {
       setIsActive(false);
-      handleSessionComplete();
+      handlePhaseComplete();
     }
   }, [isActive, timeLeft]);
 
-  const startTimer = () => {
-    const startedAt = new Date().toISOString();
-    setSessionStartedAt(startedAt);
-    setTimeLeft(minutes * 60);
-    setIsActive(true);
-    setMode('study');
+  const applyPreset = (focus, sBreak, lBreak, cycles = 4) => {
+    setFocusMins(focus);
+    setShortBreakMins(sBreak);
+    setLongBreakMins(lBreak);
+    setCyclesBeforeLongBreak(cycles);
   };
 
-  const stopTimer = () => {
-    setIsActive(false);
-    if (sessionStartedAt) {
-      const sessionElapsedMinutes = Math.floor((Date.now() - new Date(sessionStartedAt).getTime()) / 60000);
-      onStudySessionComplete?.({ userId: user.id, durationMinutes: sessionElapsedMinutes, startedAt: sessionStartedAt, completedAt: new Date().toISOString(), partial: true });
-    }
+  const clampMinutes = (val, min, max) => {
+    const parsed = parseInt(val, 10);
+    if (isNaN(parsed)) return min;
+    return Math.min(max, Math.max(min, parsed));
   };
-  
-  const resetTimer = () => {
-    setIsActive(false);
-    setTimeLeft(minutes * 60);
-    setMode('setup');
+
+  const startPomodoro = () => {
+    const validFocus = clampMinutes(focusMins, 1, 180);
+    const validShort = clampMinutes(shortBreakMins, 1, 60);
+    const validLong = clampMinutes(longBreakMins, 1, 90);
+    const validCycles = clampMinutes(cyclesBeforeLongBreak, 1, 10);
+
+    setFocusMins(validFocus);
+    setShortBreakMins(validShort);
+    setLongBreakMins(validLong);
+    setCyclesBeforeLongBreak(validCycles);
+
+    setCompletedCycles(0);
+    setPhase('focus');
+    setTimeLeft(validFocus * 60);
+    setSessionStartedAt(new Date().toISOString());
+    setIsActive(true);
+    setShowMiniGame(false);
     onBreakLockChange?.(false);
   };
 
-  const handleSessionComplete = async () => {
-    const completedAt = new Date().toISOString();
-    onAwardExp(minutes, `Completed ${minutes}m study session`);
-    await onStudySessionComplete?.({
-      userId: user.id,
-      durationMinutes: minutes,
-      startedAt: sessionStartedAt || completedAt,
-      completedAt,
-    });
-    setMode('break');
+  const pauseTimer = () => setIsActive(false);
+
+  const resetPomodoro = () => {
+    if (phase === 'focus' && sessionStartedAt) {
+      const elapsedMinutes = Math.floor((Date.now() - new Date(sessionStartedAt).getTime()) / 60000);
+      if (elapsedMinutes >= 1) {
+        onStudySessionComplete?.({
+          userId: user.id,
+          durationMinutes: elapsedMinutes,
+          startedAt: sessionStartedAt,
+          completedAt: new Date().toISOString(),
+          partial: true,
+        });
+      }
+    }
+    setIsActive(false);
+    setPhase('setup');
+    setCompletedCycles(0);
+    setSessionStartedAt(null);
+    setTimeLeft(focusMins * 60);
+    setShowMiniGame(false);
+    onBreakLockChange?.(false);
+  };
+
+  const startNextFocusRound = () => {
+    setPhase('focus');
+    setTimeLeft(focusMins * 60);
+    setSessionStartedAt(new Date().toISOString());
+    setIsActive(true);
+    setShowMiniGame(false);
+    onBreakLockChange?.(false);
+  };
+
+  const handlePhaseComplete = async () => {
+    playNotificationChime();
+
+    if (phase === 'focus') {
+      const completedAt = new Date().toISOString();
+      const nextCycleCount = completedCycles + 1;
+      setCompletedCycles(nextCycleCount);
+
+      onAwardExp(focusMins, `Pomodoro Focus (${focusMins}m)`);
+      await onStudySessionComplete?.({
+        userId: user.id,
+        durationMinutes: focusMins,
+        startedAt: sessionStartedAt || completedAt,
+        completedAt,
+      });
+
+      const isLongBreakTurn = nextCycleCount % cyclesBeforeLongBreak === 0;
+      const nextPhase = isLongBreakTurn ? 'longBreak' : 'shortBreak';
+      const breakDuration = isLongBreakTurn ? longBreakMins : shortBreakMins;
+
+      setPhase(nextPhase);
+      setTimeLeft(breakDuration * 60);
+      setSessionStartedAt(null);
+      setIsActive(true);
+      onBreakLockChange?.(true);
+    } else {
+      startNextFocusRound();
+    }
   };
 
   const formatTime = (seconds) => {
@@ -681,87 +761,282 @@ function StudyCare({ user, onAwardExp, onStudySessionComplete, onBreakLockChange
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
+  const currentPhaseTotalSeconds =
+    phase === 'focus'
+      ? focusMins * 60
+      : phase === 'shortBreak'
+      ? shortBreakMins * 60
+      : phase === 'longBreak'
+      ? longBreakMins * 60
+      : focusMins * 60;
+
+  const isBreakPhase = phase === 'shortBreak' || phase === 'longBreak';
+  const currentCycleIndex = (completedCycles % cyclesBeforeLongBreak) + (phase === 'focus' ? 1 : 0);
+
+  const presets = [
+    { label: 'Classic', desc: '25 / 5 / 15m', f: 25, s: 5, l: 15, c: 4 },
+    { label: 'Deep Work', desc: '50 / 10 / 20m', f: 50, s: 10, l: 20, c: 3 },
+    { label: 'Quick', desc: '15 / 3 / 10m', f: 15, s: 3, l: 10, c: 4 },
+  ];
+
+  const settingFields = [
+    {
+      label: 'Focus',
+      sub: `+${focusMins || 1} EXP / round`,
+      dot: 'bg-blue-600',
+      val: focusMins,
+      set: setFocusMins,
+      min: 1,
+      max: 180,
+      step: 5,
+    },
+    {
+      label: 'Short Break',
+      sub: 'Between rounds',
+      dot: 'bg-teal-500',
+      val: shortBreakMins,
+      set: setShortBreakMins,
+      min: 1,
+      max: 60,
+      step: 1,
+    },
+    {
+      label: 'Long Break',
+      sub: 'After full cycle',
+      dot: 'bg-indigo-500',
+      val: longBreakMins,
+      set: setLongBreakMins,
+      min: 1,
+      max: 90,
+      step: 5,
+    },
+    {
+      label: 'Rounds',
+      sub: 'Per full cycle',
+      dot: 'bg-amber-500',
+      val: cyclesBeforeLongBreak,
+      set: setCyclesBeforeLongBreak,
+      min: 1,
+      max: 10,
+      step: 1,
+    },
+  ];
+
   return (
     <div className="max-w-3xl mx-auto space-y-6 animate-fade-in">
-      <div className="text-center mb-8">
-        <h1 className="text-3xl font-bold text-slate-900">Study Care</h1>
-        <p className="text-slate-500 mt-2">Focus on your tasks and earn EXP for every minute studied.</p>
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900">Study Care</h1>
+          <p className="text-slate-500 mt-1">Pomodoro focus timer · Earn 1 EXP for every focused minute</p>
+        </div>
+        {phase !== 'setup' && (
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-100 text-slate-600 text-xs font-semibold self-start sm:self-auto">
+            <span>Completed: {completedCycles} {completedCycles === 1 ? 'round' : 'rounds'}</span>
+          </div>
+        )}
       </div>
 
-      {mode !== 'break' && (
-        <Card className="text-center py-12">
-          {mode === 'setup' ? (
-            <div className="space-y-6">
-              <div className="w-24 h-24 mx-auto bg-indigo-50 rounded-full flex items-center justify-center mb-6">
-                <Clock size={40} className="text-blue-600" />
+      {phase === 'setup' ? (
+        <Card className="p-6 md:p-8 space-y-6">
+          {/* Baris atas: Label & Quick Presets */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-100">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                <Sliders size={19} />
               </div>
-              <h2 className="text-2xl font-bold text-slate-800">Set Target Time</h2>
-              <div className="flex items-center justify-center gap-4">
-                {[15, 25, 30, 45, 60].map(m => (
-                  <button
-                    key={m}
-                    onClick={() => setMinutes(m)}
-                    className={`px-4 py-2 rounded-lg font-medium transition-all ${minutes === m ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                  >
-                    {m}m
-                  </button>
-                ))}
+              <div>
+                <h2 className="text-base font-bold text-slate-800">Configure Timer</h2>
+                <p className="text-xs text-slate-500">Pick a preset or customize minutes freely</p>
               </div>
-              <button onClick={startTimer} className="mt-8 px-8 py-3 bg-blue-600 text-white font-bold rounded-full hover:bg-indigo-700 shadow-lg hover:shadow-xl transition-all flex items-center gap-2 mx-auto">
-                <Play size={20} fill="currentColor" />
-                Start Focus Session
-              </button>
             </div>
-          ) : (
-            <div className="space-y-8">
-              <div className="relative w-64 h-64 mx-auto">
-                <svg className="w-full h-full transform -rotate-90">
-                  <circle cx="128" cy="128" r="120" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-slate-100" />
-                  <circle cx="128" cy="128" r="120" stroke="currentColor" strokeWidth="8" fill="transparent" 
-                    strokeDasharray={2 * Math.PI * 120}
-                    strokeDashoffset={(2 * Math.PI * 120) * (1 - timeLeft / (minutes * 60))}
-                    className="text-blue-600 transition-all duration-1000 ease-linear" 
-                  />
-                </svg>
-                <div className="absolute top-0 left-0 w-full h-full flex flex-col items-center justify-center">
-                  <span className="text-5xl font-bold text-slate-800 tracking-tighter">{formatTime(timeLeft)}</span>
-                  <span className="text-slate-500 text-sm mt-1 uppercase tracking-widest font-medium">Remaining</span>
+
+            <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl self-start sm:self-auto">
+              {presets.map(p => {
+                const isSelected = focusMins === p.f && shortBreakMins === p.s && longBreakMins === p.l && cyclesBeforeLongBreak === p.c;
+                return (
+                  <button
+                    key={p.label}
+                    type="button"
+                    onClick={() => applyPreset(p.f, p.s, p.l, p.c)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                      isSelected
+                        ? 'bg-white text-blue-600 shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Grid 4 Kartu Pengaturan Rapi dengan Tombol - / + */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {settingFields.map(item => (
+              <div
+                key={item.label}
+                className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 flex flex-col justify-between transition-colors hover:border-slate-300"
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-bold text-slate-700">{item.label}</span>
+                  <span className={`w-2 h-2 rounded-full ${item.dot}`} />
                 </div>
-              </div>
-              
-              <div className="flex justify-center gap-4">
-                {isActive ? (
-                  <button onClick={stopTimer} className="px-6 py-3 bg-amber-100 text-amber-700 font-bold rounded-xl hover:bg-amber-200 transition-colors flex items-center gap-2">
-                    <Square size={18} fill="currentColor" /> Pause
+
+                <div className="flex items-center justify-between gap-1.5 bg-white border border-slate-200 rounded-lg p-1">
+                  <button
+                    type="button"
+                    aria-label={`Decrease ${item.label}`}
+                    onClick={() => item.set(clampMinutes(Number(item.val || item.min) - item.step, item.min, item.max))}
+                    className="w-7 h-7 rounded-md flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors"
+                  >
+                    <Minus size={14} />
                   </button>
-                ) : (
-                  <button onClick={() => setIsActive(true)} className="px-6 py-3 bg-blue-100 text-blue-700 font-bold rounded-xl hover:bg-indigo-200 transition-colors flex items-center gap-2">
-                    <Play size={18} fill="currentColor" /> Resume
+                  <input
+                    type="number"
+                    min={item.min}
+                    max={item.max}
+                    value={item.val}
+                    onChange={e => item.set(e.target.value === '' ? '' : Number(e.target.value))}
+                    onBlur={() => item.set(clampMinutes(item.val, item.min, item.max))}
+                    className="w-full text-center text-base font-bold text-slate-900 bg-transparent focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                  <button
+                    type="button"
+                    aria-label={`Increase ${item.label}`}
+                    onClick={() => item.set(clampMinutes(Number(item.val || item.min) + item.step, item.min, item.max))}
+                    className="w-7 h-7 rounded-md flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors"
+                  >
+                    <Plus size={14} />
                   </button>
-                )}
-                <button onClick={resetTimer} className="px-6 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition-colors">
-                  Cancel
-                </button>
+                </div>
+
+                <p className="text-[11px] text-slate-500 mt-2.5 text-center">{item.sub}</p>
               </div>
+            ))}
+          </div>
+
+          {/* Ringkasan Siklus & Tombol Start */}
+          <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-slate-100">
+            <p className="text-xs text-slate-500">
+              Cycle flow: <span className="font-semibold text-slate-700">{focusMins || 1}m Focus</span> → <span className="font-semibold text-teal-700">{shortBreakMins || 1}m Break</span> ({cyclesBeforeLongBreak || 1}×) → <span className="font-semibold text-indigo-700">{longBreakMins || 1}m Long Break</span>
+            </p>
+            <button
+              onClick={startPomodoro}
+              className="w-full sm:w-auto px-7 py-3 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 shadow-sm hover:shadow transition-all inline-flex items-center justify-center gap-2 text-sm"
+            >
+              <Play size={17} fill="currentColor" />
+              Start Session
+            </button>
+          </div>
+        </Card>
+      ) : (
+        <Card className="p-6 md:p-10 text-center space-y-6">
+          {/* Status Fase & Indikator Siklus */}
+          <div className="flex flex-col items-center gap-3">
+            <span className={`inline-flex items-center gap-2 px-3.5 py-1 rounded-full text-xs font-bold tracking-wide ${
+              phase === 'focus'
+                ? 'bg-blue-50 text-blue-700 border border-blue-100'
+                : phase === 'shortBreak'
+                ? 'bg-teal-50 text-teal-700 border border-teal-100'
+                : 'bg-indigo-50 text-indigo-700 border border-indigo-100'
+            }`}>
+              {phase === 'focus' ? <Clock size={13} /> : <Coffee size={13} />}
+              {phase === 'focus'
+                ? `Focus · Round ${currentCycleIndex} of ${cyclesBeforeLongBreak}`
+                : phase === 'shortBreak'
+                ? `Short Break · ${shortBreakMins}m`
+                : `Long Break · ${longBreakMins}m`}
+            </span>
+
+            {/* Cycle Progress Pills */}
+            <div className="flex items-center gap-1.5">
+              {[...Array(cyclesBeforeLongBreak)].map((_, idx) => {
+                const filled = idx < (completedCycles % cyclesBeforeLongBreak) || phase === 'longBreak';
+                const active = phase === 'focus' && idx === (completedCycles % cyclesBeforeLongBreak);
+                return (
+                  <span
+                    key={idx}
+                    className={`h-2 rounded-full transition-all duration-300 ${
+                      filled ? 'w-6 bg-emerald-500' : active ? 'w-6 bg-blue-600' : 'w-2 bg-slate-200'
+                    }`}
+                  />
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Circular Timer */}
+          <div className="relative w-56 h-56 mx-auto">
+            <svg viewBox="0 0 220 220" className="w-full h-full -rotate-90">
+              <circle cx="110" cy="110" r="98" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-slate-100" />
+              <circle
+                cx="110"
+                cy="110"
+                r="98"
+                stroke="currentColor"
+                strokeWidth="8"
+                strokeLinecap="round"
+                fill="transparent"
+                strokeDasharray={2 * Math.PI * 98}
+                strokeDashoffset={(2 * Math.PI * 98) * (1 - timeLeft / Math.max(1, currentPhaseTotalSeconds))}
+                className={`${isBreakPhase ? 'text-teal-500' : 'text-blue-600'} transition-all duration-1000 ease-linear`}
+              />
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <span className="text-5xl font-bold text-slate-900 tracking-tight tabular-nums">{formatTime(timeLeft)}</span>
+              <span className="text-slate-400 text-xs mt-1.5 font-medium">
+                {phase === 'focus' ? 'Stay focused' : 'Take a breather'}
+              </span>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex flex-wrap items-center justify-center gap-2.5 pt-1">
+            {isActive ? (
+              <button onClick={pauseTimer} className="px-5 py-2.5 bg-amber-100 text-amber-800 font-semibold rounded-xl hover:bg-amber-200 transition-colors inline-flex items-center gap-2 text-sm">
+                <Square size={15} fill="currentColor" /> Pause
+              </button>
+            ) : (
+              <button onClick={() => setIsActive(true)} className="px-5 py-2.5 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition-colors inline-flex items-center gap-2 text-sm">
+                <Play size={15} fill="currentColor" /> Resume
+              </button>
+            )}
+
+            {isBreakPhase && (
+              <button onClick={startNextFocusRound} className="px-5 py-2.5 bg-teal-600 text-white font-semibold rounded-xl hover:bg-teal-700 transition-colors inline-flex items-center gap-2 text-sm">
+                <SkipForward size={15} /> Skip Break
+              </button>
+            )}
+
+            <button onClick={resetPomodoro} className="px-5 py-2.5 bg-slate-100 text-slate-600 font-semibold rounded-xl hover:bg-slate-200 transition-colors inline-flex items-center gap-2 text-sm">
+              <RotateCcw size={15} /> Reset
+            </button>
+          </div>
+
+          {/* Collapsible Mini-Game saat Break */}
+          {isBreakPhase && (
+            <div className="pt-4 border-t border-slate-100 max-w-sm mx-auto">
+              <button
+                type="button"
+                onClick={() => setShowMiniGame(!showMiniGame)}
+                className="w-full px-4 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold flex items-center justify-between transition-colors"
+              >
+                <span className="flex items-center gap-2">
+                  <Gamepad2 size={16} className="text-teal-600" />
+                  Break Mini-Game (Tic-Tac-Toe)
+                </span>
+                {showMiniGame ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              </button>
+
+              {showMiniGame && (
+                <div className="mt-3 p-4 rounded-xl bg-slate-50 border border-slate-200">
+                  <TicTacToe />
+                </div>
+              )}
             </div>
           )}
-        </Card>
-      )}
-
-      {mode === 'break' && (
-        <Card className="text-center p-8 bg-white border-blue-100">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-teal-100 text-teal-600 rounded-full mb-4">
-            <Gamepad2 size={32} />
-          </div>
-          <h2 className="text-2xl font-bold text-slate-800 mb-2">Great Job! Time for a Break.</h2>
-          <p className="text-slate-600 mb-4">You earned {minutes} EXP. Rest your mind before the next session.</p>
-          
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 max-w-sm mx-auto mb-8">
-            <h3 className="font-bold text-slate-700 mb-4">Mini-Game: Tic-Tac-Toe</h3>
-            <TicTacToe />
-          </div>
-
-          <button onClick={resetTimer} className="px-8 py-3 bg-teal-600 text-white font-bold rounded-full hover:bg-teal-700 transition-colors">End Break & Return</button>
         </Card>
       )}
     </div>
@@ -796,18 +1071,18 @@ function TicTacToe() {
 
   return (
     <div>
-      <div className="grid grid-cols-3 gap-2 w-48 mx-auto mb-4">
+      <div className="grid grid-cols-3 gap-2 w-48 mx-auto mb-3">
         {board.map((cell, i) => (
           <button 
             key={i} 
             onClick={() => handleClick(i)}
-            className="w-14 h-14 bg-slate-50 border-2 border-slate-200 rounded-lg text-2xl font-bold text-slate-700 flex items-center justify-center hover:bg-slate-100 transition-colors"
+            className="w-14 h-14 bg-white border border-slate-200 rounded-lg text-xl font-bold text-slate-700 flex items-center justify-center hover:bg-slate-100 transition-colors"
           >
             {cell}
           </button>
         ))}
       </div>
-      <div className="h-6 font-medium text-sm text-slate-600 mb-2">
+      <div className="h-5 font-medium text-xs text-slate-600 mb-1">
         {winner ? `Winner: ${winner}` : isDraw ? "It's a Draw!" : `Next player: ${xIsNext ? 'X' : 'O'}`}
       </div>
       {(winner || isDraw) && (
@@ -888,21 +1163,21 @@ function TodoList({ user, allTasksList, completions, onComplete, db, appId, show
       onComplete(expAwarded);
       setAttachTaskId(null);
       setSubmission({});
-      showToast?.("Task submitted successfully!");
+      showToast?.("Tugas berhasil dikumpulkan!");
     } catch (err) {
       console.error(err);
-      showToast?.("Failed to submit task.");
+      showToast?.("Gagal mengumpulkan tugas.");
     }
   };
 
   const clearCompletedTasks = async () => {
     const completedPersonalTasks = myTasks.filter(task => task.type === 'personal' && myCompletions.some(completion => completion.taskId === task.id));
     if (!completedPersonalTasks.length) {
-      showToast?.('There are no completed personal tasks to delete.');
+      showToast?.('Tidak ada tugas personal selesai untuk dihapus.');
       return;
     }
     await Promise.all(completedPersonalTasks.map(task => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tasks', task.id))));
-    showToast?.(`${completedPersonalTasks.length} completed personal tasks deleted.`);
+    showToast?.(`${completedPersonalTasks.length} tugas selesai dihapus.`);
   };
 
   const completeTask = async (task) => {
