@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Clock, CheckSquare, Users, Plus, Trophy, Edit2, Trash2, Save, X, Paperclip, Link as LinkIcon, AlertCircle, TrendingUp } from 'lucide-react';
+import { Clock, CheckSquare, Users, Plus, Trophy, Edit2, Trash2, Save, X, Paperclip, Link as LinkIcon, AlertCircle, TrendingUp, BarChart3, UserX, Filter } from 'lucide-react';
 import { doc, deleteDoc, updateDoc, collection, addDoc } from 'firebase/firestore';
 import emailjs from '@emailjs/browser';
 
@@ -8,6 +8,16 @@ const emailJsConfig = {
   templateId: import.meta.env.VITE_EMAILJS_TEMPLATE_ID,
   publicKey: import.meta.env.VITE_EMAILJS_PUBLIC_KEY,
 };
+
+const COURSES = [
+  'Data Structures and Algorithms',
+  'Calculus II',
+  'Software Engineering',
+  'English',
+  'Computer Organization and Architecture',
+  'Computer Networks',
+  'Database Systems',
+];
 
 const Card = ({ children, className = '' }) => (
   <div className={`bg-white rounded-2xl border border-slate-200 shadow-sm p-6 ${className}`}>
@@ -28,6 +38,7 @@ export function LecturerView({ user, tasks, completions, studySessions, currentV
 
 function LecturerDashboard({ users, tasks, completions, studySessions }) {
   const now = Date.now();
+  const todayStr = new Date().toDateString();
   const students = users.filter(student => student.role === 'student');
   const globalTasks = tasks.filter(t => t.type === 'global');
   const studentsCount = students.length;
@@ -46,6 +57,55 @@ function LecturerDashboard({ users, tasks, completions, studySessions }) {
   const weeklyCompletionsCount = (completions || []).filter(
     c => c.completedAt && new Date(c.completedAt).getTime() >= oneWeekAgo
   ).length;
+
+  // Feature 2: 7-Day Class Engagement Chart Data
+  const last7Days = [...Array(7)].map((_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (6 - i));
+    const dStr = d.toDateString();
+    const mins = (studySessions || [])
+      .filter(s => s.completedAt && new Date(s.completedAt).toDateString() === dStr)
+      .reduce((acc, s) => acc + Number(s.durationMinutes || 0), 0);
+    const submissionsCount = (completions || [])
+      .filter(c => c.completedAt && new Date(c.completedAt).toDateString() === dStr)
+      .length;
+    return {
+      dayLabel: d.toLocaleDateString('en-US', { weekday: 'short' }),
+      dateLabel: d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }),
+      minutes: mins,
+      submissions: submissionsCount,
+      isToday: dStr === todayStr,
+    };
+  });
+  const maxClassMinutes = Math.max(60, ...last7Days.map(d => d.minutes));
+
+  // Feature 1: At-Risk Students Detector
+  const atRiskStudents = students.map(student => {
+    const studentCompletions = (completions || []).filter(c => c.userId === student.id);
+    const studentSessions = (studySessions || []).filter(s => s.userId === student.id);
+
+    const submittedTaskIds = new Set(studentCompletions.map(c => c.taskId));
+    const missingTasks = globalTasks.filter(t => !submittedTaskIds.has(t.id));
+    const overdueCount = missingTasks.filter(t => new Date(t.deadline).getTime() < now).length;
+
+    const activityTimestamps = [
+      ...studentCompletions.map(c => c.completedAt ? new Date(c.completedAt).getTime() : 0),
+      ...studentSessions.map(s => s.completedAt ? new Date(s.completedAt).getTime() : 0),
+    ].filter(ts => ts > 0);
+
+    const lastActiveTs = activityTimestamps.length > 0 ? Math.max(...activityTimestamps) : null;
+    const isInactive7Days = !lastActiveTs || lastActiveTs < oneWeekAgo;
+
+    return {
+      student,
+      missingCount: missingTasks.length,
+      overdueCount,
+      isInactive7Days,
+      lastActiveTs,
+    };
+  })
+    .filter(item => item.isInactive7Days || item.missingCount >= 2 || item.overdueCount >= 1)
+    .sort((a, b) => (b.overdueCount - a.overdueCount) || (b.missingCount - a.missingCount));
 
   const deadlineAlerts = globalTasks.map(task => {
     const deadlineTime = new Date(task.deadline).getTime();
@@ -85,6 +145,7 @@ function LecturerDashboard({ users, tasks, completions, studySessions }) {
         <p className="text-slate-500 mt-1">Monitor class activity, submissions, and deadline alerts.</p>
       </div>
 
+      {/* Top Metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
         <Card className="bg-gradient-to-br from-blue-600 to-blue-900 text-white border-none">
           <div className="flex items-center justify-between mb-3">
@@ -120,6 +181,114 @@ function LecturerDashboard({ users, tasks, completions, studySessions }) {
         </Card>
       </div>
 
+      {/* Feature 2 & Feature 1 Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Feature 2: 7-Day Class Engagement Chart */}
+        <Card className="flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <BarChart3 size={20} className="text-blue-600" />
+                7-Day Class Engagement
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">Combined self-study minutes & daily task submissions</p>
+            </div>
+            <span className="text-xs font-semibold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-full">
+              Past 7 Days
+            </span>
+          </div>
+
+          <div className="grid grid-cols-7 gap-2 sm:gap-3 items-end h-44 pt-4 px-1">
+            {last7Days.map((day, idx) => {
+              const heightPct = day.minutes > 0 ? Math.max(12, Math.round((day.minutes / maxClassMinutes) * 100)) : 6;
+              return (
+                <div key={idx} className="flex flex-col items-center h-full justify-end group">
+                  <span className="text-[11px] font-bold text-slate-600 mb-1.5">
+                    {day.minutes > 0 ? `${day.minutes}m` : '-'}
+                  </span>
+                  <div className="w-full max-w-[38px] h-28 bg-slate-100 rounded-xl flex items-end overflow-hidden p-0.5">
+                    <div
+                      style={{ height: `${heightPct}%` }}
+                      className={`w-full rounded-lg transition-all duration-500 ${
+                        day.minutes > 0 ? 'bg-indigo-600' : 'bg-slate-200'
+                      }`}
+                    />
+                  </div>
+                  <span className={`text-xs font-bold mt-2 ${day.isToday ? 'text-indigo-600' : 'text-slate-600'}`}>
+                    {day.dayLabel}
+                  </span>
+                  <span className="text-[10px] text-slate-400">
+                    {day.submissions > 0 ? `${day.submissions} sub` : day.dateLabel}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+
+        {/* Feature 1: At-Risk Students Detector */}
+        <Card className="flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <UserX size={20} className="text-rose-600" />
+                  At-Risk Students
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">Students inactive for 7+ days or behind on assignments</p>
+              </div>
+              <span className="text-xs font-semibold px-2.5 py-1 bg-rose-50 text-rose-700 rounded-full">
+                {atRiskStudents.length} Flagged
+              </span>
+            </div>
+
+            {students.length === 0 ? (
+              <div className="p-8 text-center text-slate-500 bg-slate-50 rounded-xl border border-slate-100 text-sm">
+                No students registered yet.
+              </div>
+            ) : atRiskStudents.length === 0 ? (
+              <div className="p-8 text-center text-emerald-700 bg-emerald-50/70 rounded-xl border border-emerald-100 text-sm font-medium">
+                All students are active and up to date with assignments!
+              </div>
+            ) : (
+              <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1">
+                {atRiskStudents.map(({ student, missingCount, overdueCount, isInactive7Days, lastActiveTs }) => (
+                  <div key={student.id} className="p-3 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-slate-800 truncate">{student.name}</p>
+                      <p className="text-[11px] text-slate-500">
+                        {student.nim ? `NIM: ${student.nim} · ` : ''}
+                        {lastActiveTs
+                          ? `Last active: ${new Date(lastActiveTs).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}`
+                          : 'No recorded activity'}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap justify-end gap-1.5 shrink-0">
+                      {overdueCount > 0 && (
+                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+                          {overdueCount} Overdue
+                        </span>
+                      )}
+                      {missingCount > 0 && (
+                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                          {missingCount} Pending
+                        </span>
+                      )}
+                      {isInactive7Days && (
+                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
+                          Inactive 7d+
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </Card>
+      </div>
+
+      {/* Upcoming Deadline Alerts */}
       <Card>
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -180,6 +349,7 @@ function LecturerDashboard({ users, tasks, completions, studySessions }) {
         )}
       </Card>
 
+      {/* Assignment Submission Tracker */}
       <Card>
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -231,22 +401,22 @@ function LecturerDashboard({ users, tasks, completions, studySessions }) {
   );
 }
 
-const COURSES = [
-  'Data Structures and Algorithms',
-  'Calculus II',
-  'Software Engineering',
-  'English',
-  'Computer Organization and Architecture',
-  'Computer Networks',
-  'Database Systems',
-];
-
 function TaskManagement({ db, appId, tasks, lecturerId, showToast, students }) {
   const [newTask, setNewTask] = useState({ title: '', description: '', deadline: '', resourceUrl: '', course: '' });
   const [attachment, setAttachment] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [sendNotification, setSendNotification] = useState(true);
-  const globalTasks = tasks.filter(t => t.type === 'global').sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  // Feature 4: Course Filter & Inline Edit State
+  const [selectedCourseFilter, setSelectedCourseFilter] = useState('ALL');
+  const [editingTaskId, setEditingTaskId] = useState(null);
+  const [editTaskForm, setEditTaskForm] = useState({ title: '', course: '', deadline: '', description: '', resourceUrl: '' });
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const globalTasks = tasks
+    .filter(t => t.type === 'global')
+    .filter(t => selectedCourseFilter === 'ALL' || t.course === selectedCourseFilter)
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
   const handleCreateGlobalTask = async (e) => {
     e.preventDefault();
@@ -319,6 +489,42 @@ function TaskManagement({ db, appId, tasks, lecturerId, showToast, students }) {
     }
   };
 
+  const startEditTask = (task) => {
+    setEditingTaskId(task.id);
+    setEditTaskForm({
+      title: task.title || '',
+      course: task.course || '',
+      deadline: task.deadline ? task.deadline.slice(0, 10) : '',
+      description: task.description || '',
+      resourceUrl: task.resourceUrl || '',
+    });
+  };
+
+  const handleSaveTaskEdit = async (taskId) => {
+    if (!editTaskForm.title.trim() || !editTaskForm.deadline) {
+      showToast?.('Title and deadline are required.');
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tasks', taskId), {
+        title: editTaskForm.title.trim(),
+        course: editTaskForm.course,
+        deadline: editTaskForm.deadline,
+        description: editTaskForm.description,
+        resourceUrl: editTaskForm.resourceUrl,
+        updatedAt: new Date().toISOString(),
+      });
+      setEditingTaskId(null);
+      showToast?.('Assignment updated successfully.');
+    } catch (error) {
+      console.error(error);
+      showToast?.('Failed to update assignment.');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   const handleDelete = async (id) => {
     await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tasks', id));
     showToast("Assignment removed.");
@@ -382,24 +588,141 @@ function TaskManagement({ db, appId, tasks, lecturerId, showToast, students }) {
         </form>
       </Card>
 
+      {/* Feature 4: Past Assignments with Course Filter & Edit */}
       <div>
-        <h3 className="text-xl font-bold text-slate-800 mb-4 mt-8">Past Assignments</h3>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 mt-8">
+          <h3 className="text-xl font-bold text-slate-800">Past Assignments ({globalTasks.length})</h3>
+          <div className="flex items-center gap-2">
+            <Filter size={16} className="text-slate-400" />
+            <select
+              value={selectedCourseFilter}
+              onChange={e => setSelectedCourseFilter(e.target.value)}
+              className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="ALL">All Courses</option>
+              {COURSES.map(course => (
+                <option key={course} value={course}>{course}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 gap-4">
           {globalTasks.length === 0 ? (
-            <p className="text-slate-500 italic">No assignments created yet.</p>
+            <p className="text-slate-500 italic">No assignments found for the selected filter.</p>
           ) : (
             globalTasks.map(task => (
-              <Card key={task.id} className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                  <h4 className="font-bold text-lg text-slate-800">{task.course ? `${task.title} - ${task.course}` : task.title}</h4>
-                  <p className="text-sm text-slate-500 line-clamp-2 my-1">{task.description}</p>
-                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-50 text-red-700 rounded text-xs font-semibold">
-                    <Clock size={12} /> Due: {new Date(task.deadline).toLocaleDateString('en-GB')}
-                  </span>
-                </div>
-                <button onClick={() => handleDelete(task.id)} className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg text-sm font-medium transition-colors">
-                  Delete
-                </button>
+              <Card key={task.id}>
+                {editingTaskId === task.id ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <span className="text-xs font-bold uppercase tracking-wider text-blue-600">Edit Assignment</span>
+                      <button
+                        type="button"
+                        onClick={() => setEditingTaskId(null)}
+                        className="text-slate-400 hover:text-slate-700 p-1"
+                      >
+                        <X size={18} />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-1">Assignment Title</label>
+                        <input
+                          type="text"
+                          value={editTaskForm.title}
+                          onChange={e => setEditTaskForm({ ...editTaskForm, title: e.target.value })}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-1">Course</label>
+                        <select
+                          value={editTaskForm.course}
+                          onChange={e => setEditTaskForm({ ...editTaskForm, course: e.target.value })}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"
+                        >
+                          <option value="">No Course</option>
+                          {COURSES.map(course => (
+                            <option key={course} value={course}>{course}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-1">Deadline</label>
+                        <input
+                          type="date"
+                          value={editTaskForm.deadline}
+                          onChange={e => setEditTaskForm({ ...editTaskForm, deadline: e.target.value })}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Instructions / Description</label>
+                      <textarea
+                        value={editTaskForm.description}
+                        onChange={e => setEditTaskForm({ ...editTaskForm, description: e.target.value })}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm h-20 resize-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Resource URL</label>
+                      <input
+                        type="url"
+                        value={editTaskForm.resourceUrl}
+                        onChange={e => setEditTaskForm({ ...editTaskForm, resourceUrl: e.target.value })}
+                        placeholder="https://..."
+                        className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"
+                      />
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setEditingTaskId(null)}
+                        className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold hover:bg-slate-200 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={savingEdit}
+                        onClick={() => handleSaveTaskEdit(task.id)}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-colors inline-flex items-center gap-1.5 disabled:opacity-50"
+                      >
+                        <Save size={14} /> {savingEdit ? 'Saving...' : 'Save Changes'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                      <h4 className="font-bold text-lg text-slate-800">{task.course ? `${task.title} - ${task.course}` : task.title}</h4>
+                      {task.description && <p className="text-sm text-slate-500 line-clamp-2 my-1">{task.description}</p>}
+                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-50 text-red-700 rounded text-xs font-semibold mt-1">
+                        <Clock size={12} /> Due: {new Date(task.deadline).toLocaleDateString('en-GB')}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => startEditTask(task)}
+                        className="px-3.5 py-2 text-blue-600 hover:bg-blue-50 rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-1.5"
+                      >
+                        <Edit2 size={15} /> Edit
+                      </button>
+                      <button
+                        onClick={() => handleDelete(task.id)}
+                        className="px-3.5 py-2 text-red-600 hover:bg-red-50 rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-1.5"
+                      >
+                        <Trash2 size={15} /> Delete
+                      </button>
+                    </div>
+                  </div>
+                )}
               </Card>
             ))
           )}
@@ -411,7 +734,11 @@ function TaskManagement({ db, appId, tasks, lecturerId, showToast, students }) {
 
 function StudentProgress({ users, tasks, completions, db, appId, showToast }) {
   const students = users.filter(u => u.role === 'student');
-  const globalTasks = tasks.filter(t => t.type === 'global');
+  const [selectedCourseFilter, setSelectedCourseFilter] = useState('ALL');
+  const globalTasks = tasks
+    .filter(t => t.type === 'global')
+    .filter(t => selectedCourseFilter === 'ALL' || t.course === selectedCourseFilter);
+
   const [expandedSubmission, setExpandedSubmission] = useState(null);
   const [editingStudentId, setEditingStudentId] = useState(null);
   const [editName, setEditName] = useState('');
@@ -438,7 +765,7 @@ function StudentProgress({ users, tasks, completions, db, appId, showToast }) {
   };
 
   const handleDeleteStudent = async (studentId, studentName) => {
-    if (!window.confirm(`Hapus mahasiswa ${studentName}?`)) return;
+    if (!window.confirm(`Remove student ${studentName}?`)) return;
     try {
       await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', studentId));
       showToast?.("The student has been removed from the system.");
@@ -470,7 +797,7 @@ function StudentProgress({ users, tasks, completions, db, appId, showToast }) {
                       value={editName}
                       onChange={e => setEditName(e.target.value)}
                       className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm flex-1"
-                      placeholder="Nama Mahasiswa"
+                      placeholder="Student Name"
                     />
                     <div className="flex items-center gap-1">
                       <span className="text-xs text-slate-500">EXP:</span>
@@ -484,14 +811,14 @@ function StudentProgress({ users, tasks, completions, db, appId, showToast }) {
                     <button
                       onClick={() => handleSave(student.id)}
                       className="p-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                      title="Simpan"
+                      title="Save"
                     >
                       <Save size={16} />
                     </button>
                     <button
                       onClick={() => setEditingStudentId(null)}
                       className="p-1.5 bg-slate-200 text-slate-600 rounded-lg hover:bg-slate-300 transition-colors"
-                      title="Batal"
+                      title="Cancel"
                     >
                       <X size={16} />
                     </button>
@@ -506,14 +833,14 @@ function StudentProgress({ users, tasks, completions, db, appId, showToast }) {
                       <button
                         onClick={() => handleEdit(student)}
                         className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                        title="Edit Mahasiswa"
+                        title="Edit Student"
                       >
                         <Edit2 size={16} />
                       </button>
                       <button
                         onClick={() => handleDeleteStudent(student.id, student.name)}
                         className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                        title="Hapus Mahasiswa"
+                        title="Remove Student"
                       >
                         <Trash2 size={16} />
                       </button>
@@ -526,8 +853,30 @@ function StudentProgress({ users, tasks, completions, db, appId, showToast }) {
         </div>
       </Card>
 
+      {/* Feature 4: Course Filter for Assignment Submissions */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+        <h2 className="text-xl font-bold text-slate-800">Assignment Submissions</h2>
+        <div className="flex items-center gap-2">
+          <Filter size={16} className="text-slate-400" />
+          <select
+            value={selectedCourseFilter}
+            onChange={e => setSelectedCourseFilter(e.target.value)}
+            className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="ALL">All Courses</option>
+            {COURSES.map(course => (
+              <option key={course} value={course}>{course}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       {globalTasks.length === 0 ? (
-        <Card className="text-center p-8 text-slate-500">Create an assignment in Task Management first.</Card>
+        <Card className="text-center p-8 text-slate-500">
+          {selectedCourseFilter === 'ALL'
+            ? 'Create an assignment in Task Management first.'
+            : `No assignments found for ${selectedCourseFilter}.`}
+        </Card>
       ) : (
         <div className="space-y-8">
           {globalTasks.map(task => {
@@ -556,44 +905,46 @@ function StudentProgress({ users, tasks, completions, db, appId, showToast }) {
                   {students.map(student => {
                     const isCompleted = taskCompletions.some(c => c.userId === student.id);
                     return (
-                      <div key={student.id} className="px-6 py-3 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                      <div key={student.id} className="px-6 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-slate-50 transition-colors">
                         <span className="font-medium text-slate-700">{student.name}</span>
-                        {isCompleted ? (
-                          <div className="flex items-center gap-2">
-                            <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full flex items-center gap-1">
-                              <CheckSquare size={12} /> Submitted
-                            </span>
-                            <button
-                              onClick={() => setExpandedSubmission(expandedSubmission === `${task.id}-${student.id}` ? null : `${task.id}-${student.id}`)}
-                              className="text-xs font-semibold text-blue-600 hover:underline"
-                            >
-                              {expandedSubmission === `${task.id}-${student.id}` ? 'Hide submission' : 'View submission'}
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="px-2 py-1 bg-slate-100 text-slate-500 text-xs font-bold rounded-full flex items-center gap-1">
-                            <Clock size={12} /> Pending
-                          </span>
-                        )}
-                        {isCompleted && expandedSubmission === `${task.id}-${student.id}` && (() => {
-                          const submission = taskCompletions
-                            .filter(c => c.userId === student.id && c.submissionData)
-                            .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))[0];
-                          if (!submission?.submissionData) return <p className="mt-2 text-xs text-slate-500">No attachment or link submitted.</p>;
-                          const submissionType = submission.submissionType || (submission.submissionData.startsWith('data:image/') ? 'image' : /^https?:\/\//i.test(submission.submissionData) ? 'url' : 'file');
-                          return (
-                            <div className="mt-2 space-y-2">
-                              {submissionType === 'url' ? (
-                                <a href={submission.submissionData} target="_blank" rel="noreferrer" className="block text-sm text-blue-600 underline break-all">{submission.submissionData}</a>
-                              ) : submissionType === 'image' ? (
-                                <a href={submission.submissionData} target="_blank" rel="noreferrer" className="block"><img src={submission.submissionData} alt="Student submission" className="max-h-48 rounded-lg border border-slate-200" /></a>
-                              ) : (
-                                <a href={submission.submissionData} download={`submission-${student.id}`} className="inline-block text-sm text-blue-600 underline">Download submitted file</a>
-                              )}
-                              {submission.submissionUrl && <a href={submission.submissionUrl} target="_blank" rel="noreferrer" className="block text-sm text-blue-600 underline break-all">{submission.submissionUrl}</a>}
+                        <div className="flex flex-col sm:items-end">
+                          {isCompleted ? (
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full flex items-center gap-1">
+                                <CheckSquare size={12} /> Submitted
+                              </span>
+                              <button
+                                onClick={() => setExpandedSubmission(expandedSubmission === `${task.id}-${student.id}` ? null : `${task.id}-${student.id}`)}
+                                className="text-xs font-semibold text-blue-600 hover:underline"
+                              >
+                                {expandedSubmission === `${task.id}-${student.id}` ? 'Hide submission' : 'View submission'}
+                              </button>
                             </div>
-                          );
-                        })()}
+                          ) : (
+                            <span className="px-2 py-1 bg-slate-100 text-slate-500 text-xs font-bold rounded-full flex items-center gap-1">
+                              <Clock size={12} /> Pending
+                            </span>
+                          )}
+                          {isCompleted && expandedSubmission === `${task.id}-${student.id}` && (() => {
+                            const submission = taskCompletions
+                              .filter(c => c.userId === student.id && c.submissionData)
+                              .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))[0];
+                            if (!submission?.submissionData) return <p className="mt-2 text-xs text-slate-500">No attachment or link submitted.</p>;
+                            const submissionType = submission.submissionType || (submission.submissionData.startsWith('data:image/') ? 'image' : /^https?:\/\//i.test(submission.submissionData) ? 'url' : 'file');
+                            return (
+                              <div className="mt-2 space-y-2">
+                                {submissionType === 'url' ? (
+                                  <a href={submission.submissionData} target="_blank" rel="noreferrer" className="block text-sm text-blue-600 underline break-all">{submission.submissionData}</a>
+                                ) : submissionType === 'image' ? (
+                                  <a href={submission.submissionData} target="_blank" rel="noreferrer" className="block"><img src={submission.submissionData} alt="Student submission" className="max-h-48 rounded-lg border border-slate-200" /></a>
+                                ) : (
+                                  <a href={submission.submissionData} download={`submission-${student.id}`} className="inline-block text-sm text-blue-600 underline">Download submitted file</a>
+                                )}
+                                {submission.submissionUrl && <a href={submission.submissionUrl} target="_blank" rel="noreferrer" className="block text-sm text-blue-600 underline break-all">{submission.submissionUrl}</a>}
+                              </div>
+                            );
+                          })()}
+                        </div>
                       </div>
                     );
                   })}
