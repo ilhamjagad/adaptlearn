@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, Bell, Trophy, Play, CheckSquare, Award, Square, Gamepad2, Plus, Minus, Paperclip, Link as LinkIcon, FileText, Image, X, Calendar, TrendingUp, Flame, Swords, Target, Sparkles, CheckCircle2, Coffee, RotateCcw, SkipForward, Sliders, ChevronDown, ChevronUp } from 'lucide-react';
+import { Clock, Bell, Trophy, Play, CheckSquare, Award, Square, Gamepad2, Plus, Minus, Paperclip, Link as LinkIcon, FileText, Image, X, Calendar, TrendingUp, Flame, Swords, Target, Sparkles, CheckCircle2, Coffee, RotateCcw, SkipForward, Sliders, ChevronDown, ChevronUp, Lightbulb, ArrowUpRight, Activity, BarChart3 } from 'lucide-react';
 import { collection, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 
 const LEVEL_BADGES = [
@@ -64,7 +64,21 @@ export function StudentView({ user, allTasks, completions, studySessions, curren
 
   return (
     <>
-      {currentView === 'dashboard' && <StudentDashboard user={user} allTasks={allTasks} completions={completions} studySessions={studySessions} setCurrentView={setCurrentView} onSeeAllBadges={() => setShowAllBadges(true)} />}
+      {currentView === 'dashboard' && (
+        <StudentDashboard
+          user={user}
+          allTasks={allTasks}
+          completions={completions}
+          studySessions={studySessions}
+          users={users}
+          db={db}
+          appId={appId}
+          showToast={showToast}
+          onAwardExp={onAwardExp}
+          setCurrentView={setCurrentView}
+          onSeeAllBadges={() => setShowAllBadges(true)}
+        />
+      )}
       {showAllBadges && <AllBadgesModal exp={user.exp} onClose={() => setShowAllBadges(false)} />}
       {currentView === 'study' && <StudyCare user={user} onAwardExp={onAwardExp} onStudySessionComplete={onStudySessionComplete} onBreakLockChange={onBreakLockChange} />}
       {currentView === 'todo' && <TodoList user={user} allTasksList={allTasks} completions={completions} onComplete={(exp) => onAwardExp(exp, 'Task Completed')} db={db} appId={appId} showToast={showToast} highlightTaskId={nextDeadlineId} />}
@@ -88,23 +102,236 @@ export function StudentView({ user, allTasks, completions, studySessions, curren
   );
 }
 
-function StudentDashboard({ user, allTasks, completions, studySessions, setCurrentView, onSeeAllBadges }) {
+function StudentDashboard({ user, allTasks, completions, studySessions, users, db, appId, showToast, onAwardExp, setCurrentView, onSeeAllBadges }) {
   const { level, progress, requiredExp } = getLevelProgress(user.exp);
   const badges = getUnlockedBadges(level);
   const nextBadge = getNextBadge(level);
-  
+  const [claimingQuestId, setClaimingQuestId] = useState(null);
+
+  const todayKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());
+  const todayStr = new Date().toDateString();
+
+  // Task & Deadline Data
   const myTasks = allTasks.filter(t => t.type === 'global' || t.ownerId === user.id);
-  const completedTaskIds = completions.filter(c => c.userId === user.id).map(c => c.taskId);
+  const myCompletions = completions.filter(c => c.userId === user.id);
+  const completedTaskIds = myCompletions.map(c => c.taskId);
   const pendingTasks = myTasks.filter(t => !completedTaskIds.includes(t.id)).sort((a, b) => new Date(a.deadline) - new Date(b.deadline));
   const nextDeadline = pendingTasks.length > 0 ? pendingTasks[0] : null;
 
+  // Daily Streak Calculation
+  const activeDates = new Set();
+  (studySessions || []).filter(s => s.userId === user.id && s.completedAt).forEach(s => {
+    activeDates.add(new Date(s.completedAt).toDateString());
+  });
+  myCompletions.filter(c => c.completedAt).forEach(c => {
+    activeDates.add(new Date(c.completedAt).toDateString());
+  });
+
+  let streakCount = 0;
+  const checkDate = new Date();
+  if (!activeDates.has(checkDate.toDateString())) {
+    checkDate.setDate(checkDate.getDate() - 1);
+  }
+  while (activeDates.has(checkDate.toDateString())) {
+    streakCount++;
+    checkDate.setDate(checkDate.getDate() - 1);
+  }
+
+  // Today's Progress for Quests & Insight
+  const todayStudyMinutes = (studySessions || [])
+    .filter(s => s.userId === user.id && s.completedAt && new Date(s.completedAt).toDateString() === todayStr)
+    .reduce((acc, s) => acc + Number(s.durationMinutes || 0), 0);
+
+  const todayTasksCompleted = myCompletions
+    .filter(c => c.completedAt && new Date(c.completedAt).toDateString() === todayStr)
+    .length;
+
+  const claimedQuests = user.claimedQuests?.[todayKey] || {};
+
+  const handleClaimQuest = async (questId, expReward, title) => {
+    if (claimedQuests[questId] || claimingQuestId === questId) return;
+    setClaimingQuestId(questId);
+    try {
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', user.id), {
+        [`claimedQuests.${todayKey}.${questId}`]: true
+      });
+      await onAwardExp(expReward, `Quest Completed: ${title}`);
+    } catch (err) {
+      console.error('Failed to claim quest:', err);
+      showToast?.('Failed to claim quest reward.');
+    } finally {
+      setClaimingQuestId(null);
+    }
+  };
+
+  const dailyQuests = [
+    {
+      id: 'daily_focus_25',
+      title: 'Deep Focus Scholar',
+      current: Math.min(todayStudyMinutes, 25),
+      target: 25,
+      unit: 'm',
+      reward: 30,
+      actionView: 'study',
+    },
+    {
+      id: 'daily_task_1',
+      title: 'Task Crusher',
+      current: Math.min(todayTasksCompleted, 1),
+      target: 1,
+      unit: 'task',
+      reward: 25,
+      actionView: 'todo',
+    },
+  ];
+
+  // 1. Adaptive Study Insight Logic
+  const getAdaptiveInsight = () => {
+    if (nextDeadline) {
+      const hoursLeft = (new Date(nextDeadline.deadline) - new Date()) / (1000 * 60 * 60);
+      if (hoursLeft <= 48) {
+        return {
+          tag: 'Urgent Priority',
+          color: 'border-amber-200 bg-amber-50/70',
+          badgeColor: 'bg-amber-100 text-amber-800',
+          message: `The deadline for "${nextDeadline.title}" is less than 48 hours away. Complete it now to secure maximum EXP before it's overdue!`,
+          ctaLabel: 'Open To-Do List',
+          ctaView: 'todo',
+        };
+      }
+    }
+
+    if (streakCount > 0 && todayStudyMinutes === 0 && todayTasksCompleted === 0) {
+      return {
+        tag: 'Streak Protection',
+        color: 'border-orange-200 bg-orange-50/70',
+        badgeColor: 'bg-orange-100 text-orange-800',
+        message: `You are on a ${streakCount}-day study streak! Complete at least one Pomodoro session today to keep your streak alive.`,
+        ctaLabel: 'Start Pomodoro',
+        ctaView: 'study',
+      };
+    }
+
+    if (todayStudyMinutes >= 25 && pendingTasks.length > 0 && todayTasksCompleted === 0) {
+      return {
+        tag: 'Balanced Productivity',
+        color: 'border-indigo-200 bg-indigo-50/70',
+        badgeColor: 'bg-indigo-100 text-indigo-800',
+        message: `You've already focused for ${todayStudyMinutes} minutes today. Now is a great time to tackle a pending task from your To-Do List.`,
+        ctaLabel: 'View Tasks',
+        ctaView: 'todo',
+      };
+    }
+
+    if (nextDeadline) {
+      return {
+        tag: 'Early Bird Bonus',
+        color: 'border-blue-200 bg-blue-50/70',
+        badgeColor: 'bg-blue-100 text-blue-800',
+        message: `Work on "${nextDeadline.title}" early with a 25-minute Pomodoro focus session to maximize your daily EXP gains.`,
+        ctaLabel: 'Start Focus Session',
+        ctaView: 'study',
+      };
+    }
+
+    return {
+      tag: 'Great Momentum',
+      color: 'border-emerald-200 bg-emerald-50/70',
+      badgeColor: 'bg-emerald-100 text-emerald-800',
+      message: 'All tasks are cleared! Use Study Care to review your course materials and earn bonus EXP.',
+      ctaLabel: 'Go to Study Care',
+      ctaView: 'study',
+    };
+  };
+
+  const insight = getAdaptiveInsight();
+
+  // 2. 7-Day Activity Chart Data
+  const last7Days = [...Array(7)].map((_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (6 - i));
+    const dStr = d.toDateString();
+    const mins = (studySessions || [])
+      .filter(s => s.userId === user.id && s.completedAt && new Date(s.completedAt).toDateString() === dStr)
+      .reduce((acc, s) => acc + Number(s.durationMinutes || 0), 0);
+    const doneTasks = myCompletions.filter(c => c.completedAt && new Date(c.completedAt).toDateString() === dStr).length;
+    return {
+      dayLabel: d.toLocaleDateString('en-US', { weekday: 'short' }),
+      dateLabel: d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }),
+      minutes: mins,
+      tasks: doneTasks,
+      isToday: dStr === todayStr,
+    };
+  });
+  const maxChartMinutes = Math.max(60, ...last7Days.map(d => d.minutes));
+
+  // 3. Leaderboard Snapshot Data
+  const rankedStudents = (users || []).filter(u => u.role === 'student').sort((a, b) => b.exp - a.exp);
+  const myRankIndex = rankedStudents.findIndex(s => s.id === user.id);
+  const myRank = myRankIndex >= 0 ? myRankIndex + 1 : '-';
+  const studentAbove = myRankIndex > 0 ? rankedStudents[myRankIndex - 1] : null;
+  const studentBelow = myRankIndex >= 0 && myRankIndex < rankedStudents.length - 1 ? rankedStudents[myRankIndex + 1] : null;
+  const expGapToAbove = studentAbove ? Math.max(1, studentAbove.exp - user.exp + 1) : 0;
+
+  // 4. Recent EXP & Activity Feed Data
+  const taskMap = new Map(allTasks.map(t => [t.id, t]));
+  const recentActivities = [
+    ...(studySessions || [])
+      .filter(s => s.userId === user.id && s.completedAt && !s.partial)
+      .map(s => ({
+        id: `session-${s.id}`,
+        type: 'study',
+        title: `Pomodoro Focus (${s.durationMinutes} mins)`,
+        exp: Number(s.durationMinutes || 0),
+        timestamp: new Date(s.completedAt).getTime(),
+      })),
+    ...myCompletions
+      .filter(c => c.completedAt)
+      .map(c => {
+        const t = taskMap.get(c.taskId);
+        return {
+          id: `comp-${c.id}`,
+          type: 'task',
+          title: t ? `Completed: ${t.title}` : 'Completed a task',
+          exp: Number(c.expAwarded || 0),
+          timestamp: new Date(c.completedAt).getTime(),
+        };
+      }),
+  ]
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .slice(0, 5);
+
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-slate-900">Welcome back, {user.name}!</h1>
         <p className="text-slate-500 mt-1">Ready to earn some EXP today?</p>
       </div>
 
+      {/* Adaptive Study Insight Banner */}
+      <div className={`rounded-2xl border p-4 md:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${insight.color}`}>
+        <div className="flex items-start gap-3.5">
+          <div className="w-10 h-10 rounded-xl bg-white shadow-sm flex items-center justify-center shrink-0 text-blue-600 mt-0.5">
+            <Lightbulb size={20} />
+          </div>
+          <div>
+            <span className={`inline-block text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full mb-1 ${insight.badgeColor}`}>
+              Adaptive Insight · {insight.tag}
+            </span>
+            <p className="text-sm font-medium text-slate-800 leading-relaxed">{insight.message}</p>
+          </div>
+        </div>
+        <button
+          onClick={() => setCurrentView(insight.ctaView)}
+          className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl transition-colors inline-flex items-center gap-1.5 shrink-0 self-start sm:self-center"
+        >
+          <span>{insight.ctaLabel}</span>
+          <ArrowUpRight size={15} />
+        </button>
+      </div>
+
+      {/* Row 1: Current Level Status & Next Deadline */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="md:col-span-2 bg-gradient-to-br from-blue-600 to-blue-900 text-white border-none relative overflow-hidden">
           <div className="relative z-10">
@@ -165,8 +392,236 @@ function StudentDashboard({ user, allTasks, completions, studySessions, setCurre
         </Card>
       </div>
 
+      {/* Weekly Summary */}
       <WeeklySummaryCard user={user} completions={completions} studySessions={studySessions} />
 
+      {/* Row 2: 7-Day Focus Activity Chart & Today's Quests */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <Card className="lg:col-span-2 flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <BarChart3 size={20} className="text-blue-600" />
+                7-Day Focus Activity
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">Daily study minutes & completed tasks over the last 7 days</p>
+            </div>
+            <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">
+              Goal: 25m / day
+            </span>
+          </div>
+
+          <div className="grid grid-cols-7 gap-2 sm:gap-4 items-end h-44 pt-4 px-1">
+            {last7Days.map((day, idx) => {
+              const heightPct = day.minutes > 0 ? Math.max(12, Math.round((day.minutes / maxChartMinutes) * 100)) : 6;
+              return (
+                <div key={idx} className="flex flex-col items-center h-full justify-end group">
+                  <span className="text-[11px] font-bold text-slate-600 mb-1.5 opacity-80 group-hover:opacity-100">
+                    {day.minutes > 0 ? `${day.minutes}m` : '-'}
+                  </span>
+                  <div className="w-full max-w-[38px] h-28 bg-slate-100 rounded-xl flex items-end overflow-hidden p-0.5">
+                    <div
+                      style={{ height: `${heightPct}%` }}
+                      className={`w-full rounded-lg transition-all duration-500 ${
+                        day.minutes >= 25
+                          ? 'bg-blue-600'
+                          : day.minutes > 0
+                          ? 'bg-blue-400'
+                          : 'bg-slate-200'
+                      }`}
+                    />
+                  </div>
+                  <span className={`text-xs font-bold mt-2 ${day.isToday ? 'text-blue-600' : 'text-slate-600'}`}>
+                    {day.dayLabel}
+                  </span>
+                  <span className="text-[10px] text-slate-400">
+                    {day.tasks > 0 ? `${day.tasks} ${day.tasks === 1 ? 'task' : 'tasks'}` : day.dateLabel}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+
+        {/* Today's Streak & Quests */}
+        <Card className="flex flex-col justify-between space-y-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-bold text-slate-800">Today&apos;s Quests</h3>
+              <p className="text-xs text-slate-500">Complete daily missions for bonus EXP</p>
+            </div>
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-extrabold">
+              <Flame size={15} className="text-orange-500" fill="currentColor" />
+              <span>{streakCount}d Streak</span>
+            </div>
+          </div>
+
+          <div className="space-y-3.5">
+            {dailyQuests.map(q => {
+              const isDone = q.current >= q.target;
+              const isClaimed = !!claimedQuests[q.id];
+              const pct = Math.min(100, Math.round((q.current / q.target) * 100));
+
+              return (
+                <div key={q.id} className="p-3.5 rounded-xl bg-slate-50 border border-slate-100 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-slate-800">{q.title}</span>
+                    <span className="font-bold text-amber-600">+{q.reward} EXP</span>
+                  </div>
+                  <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${isDone ? 'bg-emerald-500' : 'bg-blue-600'}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between pt-0.5">
+                    <span className="text-[11px] font-medium text-slate-500">
+                      {q.current} / {q.target} {q.unit}
+                    </span>
+                    {isClaimed ? (
+                      <span className="text-[11px] font-bold text-emerald-600 flex items-center gap-1">
+                        <CheckCircle2 size={13} /> Claimed
+                      </span>
+                    ) : isDone ? (
+                      <button
+                        disabled={claimingQuestId === q.id}
+                        onClick={() => handleClaimQuest(q.id, q.reward, q.title)}
+                        className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold rounded-lg transition-colors"
+                      >
+                        {claimingQuestId === q.id ? '...' : 'Claim EXP'}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setCurrentView(q.actionView)}
+                        className="text-[11px] font-semibold text-blue-600 hover:underline"
+                      >
+                        Start →
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <button
+            onClick={() => setCurrentView('gamification')}
+            className="w-full py-2 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors"
+          >
+            Open Gamifications Hub
+          </button>
+        </Card>
+      </div>
+
+      {/* Row 3: Leaderboard Snapshot & Recent EXP Activity */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card className="flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <Trophy size={20} className="text-amber-500" />
+                  Leaderboard Snapshot
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {myRank === 1
+                    ? 'You are currently #1 in the class! Keep defending your spot.'
+                    : studentAbove
+                    ? `Need ${expGapToAbove} more EXP to overtake ${studentAbove.name}`
+                    : 'Your current standing among classmates'}
+                </p>
+              </div>
+              <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-700 font-extrabold text-sm">
+                Rank #{myRank}
+              </span>
+            </div>
+
+            <div className="space-y-2.5">
+              {studentAbove && (
+                <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100 text-sm">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="font-bold text-slate-400 w-7">#{myRank - 1}</span>
+                    <span className="font-semibold text-slate-700 truncate">{studentAbove.name}</span>
+                  </div>
+                  <span className="font-bold text-slate-600 shrink-0">{studentAbove.exp} EXP</span>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-sm">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="font-black text-blue-700 w-7">#{myRank}</span>
+                  <span className="font-bold text-blue-950 truncate">{user.name} (You)</span>
+                </div>
+                <span className="font-extrabold text-blue-700 shrink-0">{user.exp} EXP</span>
+              </div>
+
+              {studentBelow && (
+                <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100 text-sm">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="font-bold text-slate-400 w-7">#{myRank + 1}</span>
+                    <span className="font-semibold text-slate-700 truncate">{studentBelow.name}</span>
+                  </div>
+                  <span className="font-bold text-slate-600 shrink-0">{studentBelow.exp} EXP</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-4 pt-3 border-t border-slate-100 flex justify-end">
+            <button
+              onClick={() => setCurrentView('leaderboard')}
+              className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline"
+            >
+              View Full Leaderboard →
+            </button>
+          </div>
+        </Card>
+
+        <Card className="flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <Activity size={20} className="text-emerald-600" />
+                  Recent EXP Activity
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">Your latest completed focus sessions & tasks</p>
+              </div>
+            </div>
+
+            {recentActivities.length === 0 ? (
+              <div className="p-8 text-center rounded-xl bg-slate-50 border border-dashed border-slate-200 text-slate-500 text-sm">
+                No EXP activity yet. Start a Pomodoro session or complete a task!
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {recentActivities.map(act => (
+                  <div key={act.id} className="flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                        act.type === 'study' ? 'bg-blue-100 text-blue-600' : 'bg-emerald-100 text-emerald-600'
+                      }`}>
+                        {act.type === 'study' ? <Clock size={16} /> : <CheckSquare size={16} />}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-slate-800 truncate">{act.title}</p>
+                        <p className="text-[11px] text-slate-400">
+                          {new Date(act.timestamp).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} · {new Date(act.timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-xs font-extrabold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full shrink-0">
+                      +{act.exp} EXP
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </Card>
+      </div>
+
+      {/* Unlocked Badges */}
       <Card>
         <h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2">
           <Trophy size={20} className="text-yellow-500" />
@@ -614,7 +1069,7 @@ function StudyCare({ user, onAwardExp, onStudySessionComplete, onBreakLockChange
   const [longBreakMins, setLongBreakMins] = useState(15);
   const [cyclesBeforeLongBreak, setCyclesBeforeLongBreak] = useState(4);
 
-  const [phase, setPhase] = useState('setup'); // 'setup' | 'focus' | 'shortBreak' | 'longBreak'
+  const [phase, setPhase] = useState('setup');
   const [completedCycles, setCompletedCycles] = useState(0);
   const [timeLeft, setTimeLeft] = useState(25 * 60);
   const [isActive, setIsActive] = useState(false);
@@ -638,7 +1093,7 @@ function StudyCare({ user, onAwardExp, onStudySessionComplete, onBreakLockChange
       osc.start();
       osc.stop(ctx.currentTime + 0.5);
     } catch {
-      // Abaikan jika browser memblokir autoplay audio
+      // Ignore if browser blocks audio
     }
   };
 
@@ -774,57 +1229,20 @@ function StudyCare({ user, onAwardExp, onStudySessionComplete, onBreakLockChange
   const currentCycleIndex = (completedCycles % cyclesBeforeLongBreak) + (phase === 'focus' ? 1 : 0);
 
   const presets = [
-    { label: 'Classic', desc: '25 / 5 / 15m', f: 25, s: 5, l: 15, c: 4 },
-    { label: 'Deep Work', desc: '50 / 10 / 20m', f: 50, s: 10, l: 20, c: 3 },
-    { label: 'Quick', desc: '15 / 3 / 10m', f: 15, s: 3, l: 10, c: 4 },
+    { label: 'Classic', f: 25, s: 5, l: 15, c: 4 },
+    { label: 'Deep Work', f: 50, s: 10, l: 20, c: 3 },
+    { label: 'Quick', f: 15, s: 3, l: 10, c: 4 },
   ];
 
   const settingFields = [
-    {
-      label: 'Focus',
-      sub: `+${focusMins || 1} EXP / round`,
-      dot: 'bg-blue-600',
-      val: focusMins,
-      set: setFocusMins,
-      min: 1,
-      max: 180,
-      step: 5,
-    },
-    {
-      label: 'Short Break',
-      sub: 'Between rounds',
-      dot: 'bg-teal-500',
-      val: shortBreakMins,
-      set: setShortBreakMins,
-      min: 1,
-      max: 60,
-      step: 1,
-    },
-    {
-      label: 'Long Break',
-      sub: 'After full cycle',
-      dot: 'bg-indigo-500',
-      val: longBreakMins,
-      set: setLongBreakMins,
-      min: 1,
-      max: 90,
-      step: 5,
-    },
-    {
-      label: 'Rounds',
-      sub: 'Per full cycle',
-      dot: 'bg-amber-500',
-      val: cyclesBeforeLongBreak,
-      set: setCyclesBeforeLongBreak,
-      min: 1,
-      max: 10,
-      step: 1,
-    },
+    { label: 'Focus', sub: `+${focusMins || 1} EXP / round`, dot: 'bg-blue-600', val: focusMins, set: setFocusMins, min: 1, max: 180, step: 5 },
+    { label: 'Short Break', sub: 'Between rounds', dot: 'bg-teal-500', val: shortBreakMins, set: setShortBreakMins, min: 1, max: 60, step: 1 },
+    { label: 'Long Break', sub: 'After full cycle', dot: 'bg-indigo-500', val: longBreakMins, set: setLongBreakMins, min: 1, max: 90, step: 5 },
+    { label: 'Rounds', sub: 'Per full cycle', dot: 'bg-amber-500', val: cyclesBeforeLongBreak, set: setCyclesBeforeLongBreak, min: 1, max: 10, step: 1 },
   ];
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 animate-fade-in">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Study Care</h1>
@@ -839,7 +1257,6 @@ function StudyCare({ user, onAwardExp, onStudySessionComplete, onBreakLockChange
 
       {phase === 'setup' ? (
         <Card className="p-6 md:p-8 space-y-6">
-          {/* Baris atas: Label & Quick Presets */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-100">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
@@ -860,9 +1277,7 @@ function StudyCare({ user, onAwardExp, onStudySessionComplete, onBreakLockChange
                     type="button"
                     onClick={() => applyPreset(p.f, p.s, p.l, p.c)}
                     className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                      isSelected
-                        ? 'bg-white text-blue-600 shadow-sm'
-                        : 'text-slate-600 hover:text-slate-900'
+                      isSelected ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
                     {p.label}
@@ -872,7 +1287,6 @@ function StudyCare({ user, onAwardExp, onStudySessionComplete, onBreakLockChange
             </div>
           </div>
 
-          {/* Grid 4 Kartu Pengaturan Rapi dengan Tombol - / + */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {settingFields.map(item => (
               <div
@@ -917,7 +1331,6 @@ function StudyCare({ user, onAwardExp, onStudySessionComplete, onBreakLockChange
             ))}
           </div>
 
-          {/* Ringkasan Siklus & Tombol Start */}
           <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-slate-100">
             <p className="text-xs text-slate-500">
               Cycle flow: <span className="font-semibold text-slate-700">{focusMins || 1}m Focus</span> → <span className="font-semibold text-teal-700">{shortBreakMins || 1}m Break</span> ({cyclesBeforeLongBreak || 1}×) → <span className="font-semibold text-indigo-700">{longBreakMins || 1}m Long Break</span>
@@ -933,7 +1346,6 @@ function StudyCare({ user, onAwardExp, onStudySessionComplete, onBreakLockChange
         </Card>
       ) : (
         <Card className="p-6 md:p-10 text-center space-y-6">
-          {/* Status Fase & Indikator Siklus */}
           <div className="flex flex-col items-center gap-3">
             <span className={`inline-flex items-center gap-2 px-3.5 py-1 rounded-full text-xs font-bold tracking-wide ${
               phase === 'focus'
@@ -950,7 +1362,6 @@ function StudyCare({ user, onAwardExp, onStudySessionComplete, onBreakLockChange
                 : `Long Break · ${longBreakMins}m`}
             </span>
 
-            {/* Cycle Progress Pills */}
             <div className="flex items-center gap-1.5">
               {[...Array(cyclesBeforeLongBreak)].map((_, idx) => {
                 const filled = idx < (completedCycles % cyclesBeforeLongBreak) || phase === 'longBreak';
@@ -967,7 +1378,6 @@ function StudyCare({ user, onAwardExp, onStudySessionComplete, onBreakLockChange
             </div>
           </div>
 
-          {/* Circular Timer */}
           <div className="relative w-56 h-56 mx-auto">
             <svg viewBox="0 0 220 220" className="w-full h-full -rotate-90">
               <circle cx="110" cy="110" r="98" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-slate-100" />
@@ -992,7 +1402,6 @@ function StudyCare({ user, onAwardExp, onStudySessionComplete, onBreakLockChange
             </div>
           </div>
 
-          {/* Action Buttons */}
           <div className="flex flex-wrap items-center justify-center gap-2.5 pt-1">
             {isActive ? (
               <button onClick={pauseTimer} className="px-5 py-2.5 bg-amber-100 text-amber-800 font-semibold rounded-xl hover:bg-amber-200 transition-colors inline-flex items-center gap-2 text-sm">
@@ -1015,7 +1424,6 @@ function StudyCare({ user, onAwardExp, onStudySessionComplete, onBreakLockChange
             </button>
           </div>
 
-          {/* Collapsible Mini-Game saat Break */}
           {isBreakPhase && (
             <div className="pt-4 border-t border-slate-100 max-w-sm mx-auto">
               <button
@@ -1163,21 +1571,21 @@ function TodoList({ user, allTasksList, completions, onComplete, db, appId, show
       onComplete(expAwarded);
       setAttachTaskId(null);
       setSubmission({});
-      showToast?.("Tugas berhasil dikumpulkan!");
+      showToast?.("Assignment submitted successfully!");
     } catch (err) {
       console.error(err);
-      showToast?.("Gagal mengumpulkan tugas.");
+      showToast?.("Failed to submit assignment.");
     }
   };
 
   const clearCompletedTasks = async () => {
     const completedPersonalTasks = myTasks.filter(task => task.type === 'personal' && myCompletions.some(completion => completion.taskId === task.id));
     if (!completedPersonalTasks.length) {
-      showToast?.('Tidak ada tugas personal selesai untuk dihapus.');
+      showToast?.('No completed personal tasks to clear.');
       return;
     }
     await Promise.all(completedPersonalTasks.map(task => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tasks', task.id))));
-    showToast?.(`${completedPersonalTasks.length} tugas selesai dihapus.`);
+    showToast?.(`${completedPersonalTasks.length} completed ${completedPersonalTasks.length === 1 ? 'task' : 'tasks'} cleared.`);
   };
 
   const completeTask = async (task) => {
@@ -1279,7 +1687,7 @@ function TodoList({ user, allTasksList, completions, onComplete, db, appId, show
                       </label>
                       <label className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-blue-500 hover:bg-blue-50/50 transition-all">
                         <Image className="text-green-600" size={24} />
-                        <span className="text-xs font-semibold text-slate-700">Gambar</span>
+                        <span className="text-xs font-semibold text-slate-700">Image</span>
                         <input type="file" accept="image/*" className="hidden" onChange={e => setSubmission({ ...submission, file: null, image: e.target.files?.[0] })} />
                       </label>
                       <label className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex flex-col items-center justify-center gap-2">
