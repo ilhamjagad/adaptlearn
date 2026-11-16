@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { initializeApp } from "firebase/app";
 import { getAuth, onAuthStateChanged, signInWithCustomToken, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification } from "firebase/auth";
 import { getFirestore, collection, onSnapshot, doc, updateDoc, setDoc, getDoc, query, where, getDocs, addDoc } from "firebase/firestore";
-import { Clock, CheckSquare, Users, Trophy, LayoutDashboard, LogOut, Menu, X, UserRound, Sparkles } from 'lucide-react';
+import { Clock, CheckSquare, Users, Trophy, LayoutDashboard, LogOut, Menu, X, UserRound, Sparkles, MailCheck } from 'lucide-react';
 import { LoginView } from './login_view';
 import { StudentView } from './student_view';
 import { LecturerView } from './lecturer_view';
@@ -46,6 +46,7 @@ export default function AdaptLearn() {
   const [studyBreakLocked, setStudyBreakLocked] = useState(false);
   const [currentView, setCurrentView] = useState('dashboard');
   const [toast, setToast] = useState(null);
+  const [verificationBanner, setVerificationBanner] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const completedTaskIds = completions.filter(completion => completion.userId === dbUser?.id).map(completion => completion.taskId);
@@ -74,6 +75,8 @@ export default function AdaptLearn() {
         setTasks([]);
         setCompletions([]);
         setStudySessions([]);
+      } else {
+        setVerificationBanner(null);
       }
       setLoading(false);
     });
@@ -118,7 +121,7 @@ export default function AdaptLearn() {
 
   const showToast = (msg) => {
     setToast(msg);
-    setTimeout(() => setToast(null), 3000);
+    setTimeout(() => setToast(null), 4000);
   };
 
   const handleLogin = async (identifier, password, role) => {
@@ -145,7 +148,7 @@ export default function AdaptLearn() {
       const profileSnap = await getDoc(lecturerProfileRef);
       if (!profileSnap.exists() || profileSnap.data().role !== 'lecturer') {
         await signOut(auth);
-        throw new Error('Akun dosen tidak valid.');
+        throw new Error('Invalid lecturer account.');
       }
       if (profileSnap.data().name !== 'Viva Arifin, MMSI') {
         await updateDoc(lecturerProfileRef, { name: 'Viva Arifin, MMSI' });
@@ -164,12 +167,17 @@ export default function AdaptLearn() {
     const credential = await signInWithEmailAndPassword(auth, email, password);
     if (role === 'student' && !credential.user.emailVerified) {
       await signOut(auth);
+      setVerificationBanner({
+        type: 'warning',
+        title: 'Email Not Verified',
+        message: `Verification link has already been sent to ${email}. Please check your inbox or spam folder before signing in.`
+      });
       throw new Error('Please verify your email before signing in. Check your inbox for the verification link.');
     }
     const profileSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', credential.user.uid));
     if (!profileSnap.exists() || profileSnap.data().role !== role) {
       await signOut(auth);
-      throw new Error('Akun tidak terdaftar untuk peran ini.');
+      throw new Error('Account is not registered for this role.');
     }
   };
 
@@ -201,6 +209,15 @@ export default function AdaptLearn() {
       emailVerified: false
     });
     await signOut(auth);
+
+    // Tampilkan notifikasi verifikasi email mengambang di dalam aplikasi tanpa merubah UI LoginView
+    setVerificationBanner({
+      type: 'info',
+      title: 'Email Verification is Required',
+      message: `Verification link has been sent to ${email}. Please open your email (check Inbox/Spam), click the verification link, then Sign In.`
+    });
+    showToast(`Verification link sent to ${email}`);
+
     throw new Error('Verification email sent. Please check your inbox and verify your email before signing in.');
   };
 
@@ -242,7 +259,30 @@ export default function AdaptLearn() {
   if (loading) return <div className="flex h-screen items-center justify-center bg-gray-50"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div></div>;
 
   if (!user) {
-    return <LoginView onLogin={handleLogin} onRegister={handleRegister} onForgotPassword={handleForgotPassword} />;
+    return (
+      <>
+        {verificationBanner && (
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-md bg-white border border-blue-200 shadow-xl rounded-2xl p-4 flex items-start gap-3 animate-fade-in">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${verificationBanner.type === 'warning' ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600'}`}>
+              <MailCheck size={20} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-slate-900">{verificationBanner.title}</p>
+              <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">{verificationBanner.message}</p>
+            </div>
+            <button
+              type="button"
+              aria-label="Close notification"
+              onClick={() => setVerificationBanner(null)}
+              className="text-slate-400 hover:text-slate-700 p-1 shrink-0"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        )}
+        <LoginView onLogin={handleLogin} onRegister={handleRegister} onForgotPassword={handleForgotPassword} />
+      </>
+    );
   }
 
   return (
