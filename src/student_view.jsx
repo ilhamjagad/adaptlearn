@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Clock, Bell, Trophy, Play, CheckSquare, Award, Square, Gamepad2, Plus, Minus, Paperclip, Link as LinkIcon, FileText, Image, X, Calendar, TrendingUp, Flame, Swords, Target, Sparkles, CheckCircle2, Coffee, RotateCcw, SkipForward, Sliders, ChevronDown, ChevronUp, Lightbulb, ArrowUpRight, Activity, BarChart3, Brain, HelpCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Clock, Bell, Trophy, Play, CheckSquare, Award, Square, Gamepad2, Plus, Minus, Paperclip, Link as LinkIcon, FileText, Image, X, Calendar, TrendingUp, Flame, Swords, Target, Sparkles, CheckCircle2, Coffee, RotateCcw, SkipForward, Sliders, ChevronDown, ChevronUp, Lightbulb, ArrowUpRight, Activity, BarChart3, Brain, HelpCircle, Bold, Italic, Underline, List, ListOrdered, RemoveFormatting, AlignLeft, AlignCenter, AlignRight, AlignJustify } from 'lucide-react';
 import { collection, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 
 const LEVEL_BADGES = [
@@ -1064,7 +1064,7 @@ function CodeWordleGame({ isRewardClaimed, onWinReward, showToast }) {
     const onKeyDown = (e) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const tag = e.target?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target?.isContentEditable) return;
       const k = e.key.toUpperCase();
       if (k === 'ENTER' || k === 'BACKSPACE' || /^[A-Z]$/.test(k)) {
         e.preventDefault();
@@ -1943,6 +1943,188 @@ function TicTacToe() {
   );
 }
 
+function WordDescriptionEditor({ value, onChange, placeholder = 'Write your task notes here...' }) {
+  const editorRef = useRef(null);
+  const [activeFormats, setActiveFormats] = useState({
+    bold: false,
+    italic: false,
+    underline: false,
+    insertUnorderedList: false,
+    insertOrderedList: false,
+    justifyLeft: false,
+    justifyCenter: false,
+    justifyRight: false,
+    justifyFull: false,
+  });
+
+  useEffect(() => {
+    if (editorRef.current && editorRef.current.innerHTML !== (value || '')) {
+      editorRef.current.innerHTML = value || '';
+    }
+  }, [value]);
+
+  const updateToolbarState = () => {
+    if (!document.activeElement || editorRef.current !== document.activeElement) return;
+    try {
+      setActiveFormats({
+        bold: document.queryCommandState('bold'),
+        italic: document.queryCommandState('italic'),
+        underline: document.queryCommandState('underline'),
+        insertUnorderedList: document.queryCommandState('insertUnorderedList'),
+        insertOrderedList: document.queryCommandState('insertOrderedList'),
+        justifyLeft: document.queryCommandState('justifyLeft'),
+        justifyCenter: document.queryCommandState('justifyCenter'),
+        justifyRight: document.queryCommandState('justifyRight'),
+        justifyFull: document.queryCommandState('justifyFull'),
+      });
+    } catch {
+      // Ignore if queryCommandState is unavailable
+    }
+  };
+
+  useEffect(() => {
+    document.addEventListener('selectionchange', updateToolbarState);
+    return () => document.removeEventListener('selectionchange', updateToolbarState);
+  }, []);
+
+  const applyFormat = (command) => {
+    editorRef.current?.focus();
+    document.execCommand(command, false, null);
+    updateToolbarState();
+    if (editorRef.current) {
+      onChange(editorRef.current.innerHTML);
+    }
+  };
+
+  const getBtnClass = (isActive) =>
+    `p-1.5 rounded-lg transition-all ${
+      isActive
+        ? 'bg-white text-blue-600 shadow-md ring-1 ring-slate-200/80'
+        : 'text-slate-700 hover:bg-white/80 hover:text-blue-600'
+    }`;
+
+  return (
+    <div className="rounded-xl border border-slate-300 bg-white overflow-hidden shadow-sm focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all">
+      {/* Toolbar ala Word */}
+      <div className="flex flex-wrap items-center gap-1 px-2.5 py-1.5 bg-slate-100 border-b border-slate-200">
+        {/* Text Style */}
+        <button
+          type="button"
+          onMouseDown={(e) => { e.preventDefault(); applyFormat('bold'); }}
+          title="Bold"
+          className={getBtnClass(activeFormats.bold)}
+        >
+          <Bold size={15} />
+        </button>
+        <button
+          type="button"
+          onMouseDown={(e) => { e.preventDefault(); applyFormat('italic'); }}
+          title="Italic"
+          className={getBtnClass(activeFormats.italic)}
+        >
+          <Italic size={15} />
+        </button>
+        <button
+          type="button"
+          onMouseDown={(e) => { e.preventDefault(); applyFormat('underline'); }}
+          title="Underline"
+          className={getBtnClass(activeFormats.underline)}
+        >
+          <Underline size={15} />
+        </button>
+
+        <span className="w-px h-4 bg-slate-300 mx-1" />
+
+        {/* Alignment: Left, Center, Right, Fill (Justify) */}
+        <button
+          type="button"
+          onMouseDown={(e) => { e.preventDefault(); applyFormat('justifyLeft'); }}
+          title="Rata Kiri (Align Left)"
+          className={getBtnClass(activeFormats.justifyLeft)}
+        >
+          <AlignLeft size={15} />
+        </button>
+        <button
+          type="button"
+          onMouseDown={(e) => { e.preventDefault(); applyFormat('justifyCenter'); }}
+          title="Rata Tengah (Align Center)"
+          className={getBtnClass(activeFormats.justifyCenter)}
+        >
+          <AlignCenter size={15} />
+        </button>
+        <button
+          type="button"
+          onMouseDown={(e) => { e.preventDefault(); applyFormat('justifyRight'); }}
+          title="Rata Kanan (Align Right)"
+          className={getBtnClass(activeFormats.justifyRight)}
+        >
+          <AlignRight size={15} />
+        </button>
+        <button
+          type="button"
+          onMouseDown={(e) => { e.preventDefault(); applyFormat('justifyFull'); }}
+          title="Fill / Rata Kiri-Kanan (Justify)"
+          className={getBtnClass(activeFormats.justifyFull)}
+        >
+          <AlignJustify size={15} />
+        </button>
+
+        <span className="w-px h-4 bg-slate-300 mx-1" />
+
+        {/* Lists */}
+        <button
+          type="button"
+          onMouseDown={(e) => { e.preventDefault(); applyFormat('insertUnorderedList'); }}
+          title="Bullet List"
+          className={getBtnClass(activeFormats.insertUnorderedList)}
+        >
+          <List size={15} />
+        </button>
+        <button
+          type="button"
+          onMouseDown={(e) => { e.preventDefault(); applyFormat('insertOrderedList'); }}
+          title="Numbered List"
+          className={getBtnClass(activeFormats.insertOrderedList)}
+        >
+          <ListOrdered size={15} />
+        </button>
+
+        <span className="w-px h-4 bg-slate-300 mx-1" />
+
+        {/* Clear Formatting */}
+        <button
+          type="button"
+          onMouseDown={(e) => { e.preventDefault(); applyFormat('removeFormat'); }}
+          title="Clear Formatting"
+          className="p-1.5 rounded-lg text-slate-700 hover:bg-white/80 hover:text-red-600 transition-colors"
+        >
+          <RemoveFormatting size={15} />
+        </button>
+      </div>
+
+      {/* Area Lembar Kerja Dokumen */}
+      <div className="bg-slate-50/70 p-3">
+        <div
+          ref={editorRef}
+          contentEditable
+          suppressContentEditableWarning
+          data-placeholder={placeholder}
+          onFocus={updateToolbarState}
+          onKeyUp={updateToolbarState}
+          onMouseUp={updateToolbarState}
+          onInput={(e) => {
+            updateToolbarState();
+            const html = e.currentTarget.innerHTML;
+            const plainText = e.currentTarget.textContent?.trim();
+            onChange(plainText ? html : '');
+          }}
+          className="min-h-[130px] max-h-64 overflow-y-auto bg-white border border-slate-200/80 rounded-lg px-4 py-3 text-sm text-slate-800 leading-relaxed shadow-inner focus:outline-none [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400"
+        />
+      </div>
+    </div>
+  );
+}
+
 function TodoList({ user, allTasksList, completions, onComplete, db, appId, showToast, highlightTaskId }) {
   const [showAdd, setShowAdd] = useState(false);
   const [attachTaskId, setAttachTaskId] = useState(null);
@@ -2073,16 +2255,20 @@ function TodoList({ user, allTasksList, completions, onComplete, db, appId, show
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Task Title</label>
-                <input required type="text" value={newTask.title} onChange={e => setNewTask({...newTask, title: e.target.value})} className="w-full px-3 py-2 rounded-md border border-slate-300" placeholder="e.g., Read chapter 4" />
+                <input required type="text" value={newTask.title} onChange={e => setNewTask({...newTask, title: e.target.value})} className="w-full px-3 py-2 rounded-md border border-slate-300 bg-white" placeholder="e.g., Read chapter 4" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Deadline</label>
-                <input required type="date" value={newTask.deadline} onChange={e => setNewTask({...newTask, deadline: e.target.value})} className="w-full px-3 py-2 rounded-md border border-slate-300" />
+                <input required type="date" value={newTask.deadline} onChange={e => setNewTask({...newTask, deadline: e.target.value})} className="w-full px-3 py-2 rounded-md border border-slate-300 bg-white" />
               </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Description (Optional)</label>
-              <textarea value={newTask.description} onChange={e => setNewTask({...newTask, description: e.target.value})} className="w-full px-3 py-2 rounded-md border border-slate-300 h-20 resize-none" />
+              <WordDescriptionEditor
+                value={newTask.description}
+                onChange={(html) => setNewTask({ ...newTask, description: html })}
+                placeholder="Write your task notes, bullet points, or details here..."
+              />
             </div>
             <button type="submit" className="px-6 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-indigo-700">Save Task</button>
           </form>
@@ -2175,7 +2361,16 @@ function TodoList({ user, allTasksList, completions, onComplete, db, appId, show
                 ) : (
                   <div className="mt-3">
                     <div>
-                      {task.description && <p className="text-sm text-slate-500 mb-3">{task.description}</p>}
+                      {task.description && (
+                        task.type === 'personal' && /<[a-z][\s\S]*>/i.test(task.description) ? (
+                          <div
+                            className="text-sm text-slate-700 bg-slate-50 border border-slate-200/80 rounded-xl px-4 py-3 mb-3 leading-relaxed [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
+                            dangerouslySetInnerHTML={{ __html: task.description }}
+                          />
+                        ) : (
+                          <p className="text-sm text-slate-500 mb-3 whitespace-pre-line">{task.description}</p>
+                        )
+                      )}
                       {task.attachment?.data && (
                         <a href={task.attachment.data} download={task.attachment.name} className="mb-3 inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:underline">
                           <Paperclip size={15} /> {task.attachment.name || 'Download attachment'}
