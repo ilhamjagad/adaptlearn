@@ -122,7 +122,7 @@ export function LoginView({ onLogin, onRegister, onForgotPassword }) {
           </div>
 
           <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/10 shadow-lg text-slate-100 text-sm lg:text-base leading-relaxed">
-            AdaptLearn is an adaptive, gamified learning platform engineered to help students build consistent study habits, complete tasks early, and prevent burnout through intelligent well-being tracking.
+           "AdaptLearn is an adaptive, gamified learning platform engineered to help students build consistent study habits, complete tasks early, and stay on track through smart focus sessions and real-time progress tracking."
           </div>
         </div>
 
