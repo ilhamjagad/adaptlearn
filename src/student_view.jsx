@@ -2039,7 +2039,7 @@ function WordDescriptionEditor({ value, onChange, placeholder = 'Write your task
         <button
           type="button"
           onMouseDown={(e) => { e.preventDefault(); applyFormat('justifyLeft'); }}
-          title="Rata Kiri (Align Left)"
+          title="Align Left"
           className={getBtnClass(activeFormats.justifyLeft)}
         >
           <AlignLeft size={15} />
@@ -2047,7 +2047,7 @@ function WordDescriptionEditor({ value, onChange, placeholder = 'Write your task
         <button
           type="button"
           onMouseDown={(e) => { e.preventDefault(); applyFormat('justifyCenter'); }}
-          title="Rata Tengah (Align Center)"
+          title="Align Center"
           className={getBtnClass(activeFormats.justifyCenter)}
         >
           <AlignCenter size={15} />
@@ -2055,7 +2055,7 @@ function WordDescriptionEditor({ value, onChange, placeholder = 'Write your task
         <button
           type="button"
           onMouseDown={(e) => { e.preventDefault(); applyFormat('justifyRight'); }}
-          title="Rata Kanan (Align Right)"
+          title="Align Right"
           className={getBtnClass(activeFormats.justifyRight)}
         >
           <AlignRight size={15} />
@@ -2063,7 +2063,7 @@ function WordDescriptionEditor({ value, onChange, placeholder = 'Write your task
         <button
           type="button"
           onMouseDown={(e) => { e.preventDefault(); applyFormat('justifyFull'); }}
-          title="Fill / Rata Kiri-Kanan (Justify)"
+          title="Fill (Justify)"
           className={getBtnClass(activeFormats.justifyFull)}
         >
           <AlignJustify size={15} />
