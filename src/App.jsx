@@ -35,13 +35,13 @@ const getLevel = (exp) => {
   return level;
 };
 
-// Fungsi sinkronisasi profil student setelah verifikasi email berhasil
+// Sinkronisasi profil student ke koleksi users hanya setelah email terverifikasi
 const finalizeVerifiedStudent = async (firebaseUser) => {
   if (!firebaseUser || !firebaseUser.emailVerified || firebaseUser.email === 'dosen@uinjkt.ac.id') {
     return null;
   }
 
-  await getIdToken(firebaseUser, true); // Paksa refresh JWT token agar Firestore Rules membaca email_verified = true
+  await getIdToken(firebaseUser, true);
 
   const userDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', firebaseUser.uid);
   const profileSnap = await getDoc(userDocRef);
@@ -50,13 +50,21 @@ const finalizeVerifiedStudent = async (firebaseUser) => {
     return profileSnap.data();
   }
 
-  // Ambil data sementara dari pendingUsers (jika ada)
   const pendingDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'pendingUsers', firebaseUser.uid);
   const pendingSnap = await getDoc(pendingDocRef);
   const pendingData = pendingSnap.exists() ? pendingSnap.data() : {};
 
+  // Pastikan ulang nama tetap merujuk ke studentRoster resmi jika ada
+  let officialName = pendingData.name || firebaseUser.displayName || 'Student';
+  if (pendingData.nim) {
+    const rosterSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'studentRoster', pendingData.nim));
+    if (rosterSnap.exists() && rosterSnap.data().name) {
+      officialName = rosterSnap.data().name;
+    }
+  }
+
   const studentProfile = {
-    name: pendingData.name || firebaseUser.displayName || 'Student',
+    name: officialName,
     email: firebaseUser.email,
     nim: pendingData.nim || '',
     role: 'student',
@@ -80,6 +88,7 @@ export default function AdaptLearn() {
   const [dbUser, setDbUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [allUsers, setAllUsers] = useState([]);
+  const [roster, setRoster] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [completions, setCompletions] = useState([]);
   const [studySessions, setStudySessions] = useState([]);
@@ -117,6 +126,7 @@ export default function AdaptLearn() {
         setUser(null);
         setDbUser(null);
         setAllUsers([]);
+        setRoster([]);
         setTasks([]);
         setCompletions([]);
         setStudySessions([]);
@@ -149,6 +159,7 @@ export default function AdaptLearn() {
     if (!user || !db) return;
 
     const usersRef = collection(db, 'artifacts', appId, 'public', 'data', 'users');
+    const rosterRef = collection(db, 'artifacts', appId, 'public', 'data', 'studentRoster');
     const tasksRef = collection(db, 'artifacts', appId, 'public', 'data', 'tasks');
     const completionsRef = collection(db, 'artifacts', appId, 'public', 'data', 'completions');
     const studySessionsRef = collection(db, 'artifacts', appId, 'public', 'data', 'studySessions');
@@ -160,6 +171,10 @@ export default function AdaptLearn() {
       setDbUser(currentUser || null);
       setLoading(false);
     }, (err) => console.error("Error fetching users:", err));
+
+    const unsubRoster = onSnapshot(rosterRef, (snap) => {
+      setRoster(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err) => console.error("Error fetching roster:", err));
 
     const unsubTasks = onSnapshot(tasksRef, (snap) => {
       setTasks(snap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -175,11 +190,38 @@ export default function AdaptLearn() {
 
     return () => {
       unsubUsers();
+      unsubRoster();
       unsubTasks();
       unsubCompletions();
       unsubStudySessions();
     };
   }, [user]);
+
+  // Cek kecocokan NIM & Email terhadap Whitelist Roster kelas
+  const handleLookupRoster = async (nimInput, emailInput) => {
+    const cleanNim = nimInput.trim();
+    const cleanEmail = emailInput.trim().toLowerCase();
+
+    if (!cleanNim || !cleanEmail) {
+      throw new Error('Enter both your Student ID (NIM) and institutional email.');
+    }
+
+    const rosterSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'studentRoster', cleanNim));
+    if (!rosterSnap.exists()) {
+      throw new Error('NIM is not listed in the official class roster. Contact your lecturer.');
+    }
+
+    const rosterData = rosterSnap.data();
+    if ((rosterData.email || '').trim().toLowerCase() !== cleanEmail) {
+      throw new Error('Email does not match the NIM registered in the class roster.');
+    }
+
+    return {
+      nim: cleanNim,
+      email: cleanEmail,
+      name: rosterData.name
+    };
+  };
 
   const handleLogin = async (identifier, password, role) => {
     if (role === 'lecturer' && identifier === 'dosen@uinjkt.ac.id' && password === 'dosen123') {
@@ -218,10 +260,17 @@ export default function AdaptLearn() {
       const usersRef = collection(db, 'artifacts', appId, 'public', 'data', 'users');
       const q = query(usersRef, where('nim', '==', email), where('role', '==', 'student'));
       const snap = await getDocs(q);
-      if (snap.empty) {
-        throw new Error('Student ID (NIM) is not registered or your email has not been verified yet. Please sign in with your email first.');
+
+      if (!snap.empty) {
+        email = snap.docs[0].data().email;
+      } else {
+        // Ambil email dari studentRoster jika student baru pertama kali login setelah verifikasi email
+        const rosterSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'studentRoster', email));
+        if (!rosterSnap.exists() || !rosterSnap.data().email) {
+          throw new Error('Student ID (NIM) is not registered in the class roster.');
+        }
+        email = rosterSnap.data().email;
       }
-      email = snap.docs[0].data().email;
     }
 
     const credential = await signInWithEmailAndPassword(auth, email, password);
@@ -252,25 +301,40 @@ export default function AdaptLearn() {
     let email = identifier.trim();
     if (!email.includes('@')) {
       const snap = await getDocs(query(collection(db, 'artifacts', appId, 'public', 'data', 'users'), where('nim', '==', email), where('role', '==', 'student')));
-      if (snap.empty) throw new Error('Student ID (NIM) or email is not registered.');
-      email = snap.docs[0].data().email;
+      if (!snap.empty) {
+        email = snap.docs[0].data().email;
+      } else {
+        const rosterSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'studentRoster', email));
+        if (!rosterSnap.exists() || !rosterSnap.data().email) {
+          throw new Error('Student ID (NIM) or email is not registered.');
+        }
+        email = rosterSnap.data().email;
+      }
     }
     await sendPasswordResetEmail(auth, email);
   };
 
-  const handleRegister = async (email, password, name, role, nim) => {
+  const handleRegister = async (email, password, _submittedName, role, nim) => {
     if (role !== 'student') throw new Error('Self-registration is only available for students.');
-    const nimQuery = query(collection(db, 'artifacts', appId, 'public', 'data', 'users'), where('nim', '==', nim), where('role', '==', 'student'));
+
+    const cleanNim = nim.trim();
+    const cleanEmail = email.trim().toLowerCase();
+
+    // 1. Validasi ketat terhadap Whitelist Roster kelas & ambil nama resmi dari database
+    const verifiedRoster = await handleLookupRoster(cleanNim, cleanEmail);
+
+    // 2. Cek apakah NIM sudah terdaftar aktif di users
+    const nimQuery = query(collection(db, 'artifacts', appId, 'public', 'data', 'users'), where('nim', '==', cleanNim), where('role', '==', 'student'));
     const nimSnapshot = await getDocs(nimQuery);
     if (!nimSnapshot.empty) throw new Error('This Student ID (NIM) is already registered.');
 
-    const credential = await createUserWithEmailAndPassword(auth, email, password);
+    // 3. Buat akun Firebase Auth & simpan data sementara ke pendingUsers memakai NAMA RESMI ROSTER
+    const credential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
 
-    // Simpan ke pendingUsers sementara (bukan ke users) hingga email diverifikasi
     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'pendingUsers', credential.user.uid), {
-      name: name.trim(),
-      email,
-      nim: nim.trim(),
+      name: verifiedRoster.name,
+      email: cleanEmail,
+      nim: cleanNim,
       role: 'student',
       createdAt: new Date().toISOString()
     });
@@ -281,9 +345,9 @@ export default function AdaptLearn() {
     setVerificationBanner({
       type: 'info',
       title: 'Email Verification is Required',
-      message: `Verification link has been sent to ${email}. Please open your email (check Inbox/Spam), click the verification link, then Sign In.`
+      message: `Verification link has been sent to ${cleanEmail} (${verifiedRoster.name}). Please open your email, click the verification link, then Sign In.`
     });
-    showToast(`Verification link sent to ${email}`);
+    showToast(`Verification link sent to ${cleanEmail}`);
 
     throw new Error('Verification email sent. Please check your inbox and verify your email before signing in.');
   };
@@ -347,7 +411,12 @@ export default function AdaptLearn() {
             </button>
           </div>
         )}
-        <LoginView onLogin={handleLogin} onRegister={handleRegister} onForgotPassword={handleForgotPassword} />
+        <LoginView
+          onLogin={handleLogin}
+          onRegister={handleRegister}
+          onForgotPassword={handleForgotPassword}
+          onLookupRoster={handleLookupRoster}
+        />
       </>
     );
   }
@@ -459,6 +528,7 @@ export default function AdaptLearn() {
               appId={appId} 
               showToast={showToast} 
               users={allUsers}
+              roster={roster}
             />
           )}
         </div>

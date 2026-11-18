@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Clock, CheckSquare, Users, Plus, Trophy, Edit2, Trash2, Save, X, Paperclip, Link as LinkIcon, AlertCircle, TrendingUp, BarChart3, UserX, Filter } from 'lucide-react';
-import { doc, deleteDoc, updateDoc, collection, addDoc } from 'firebase/firestore';
+import { Clock, CheckSquare, Users, Plus, Trophy, Edit2, Trash2, Save, X, Paperclip, Link as LinkIcon, AlertCircle, TrendingUp, BarChart3, UserX, Filter, UserPlus, Upload, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { doc, deleteDoc, updateDoc, setDoc, collection, addDoc } from 'firebase/firestore';
 import emailjs from '@emailjs/browser';
 
 const emailJsConfig = {
@@ -25,12 +25,12 @@ const Card = ({ children, className = '' }) => (
   </div>
 );
 
-export function LecturerView({ user, tasks, completions, studySessions, currentView, db, appId, showToast, users }) {
+export function LecturerView({ user, tasks, completions, studySessions, currentView, db, appId, showToast, users, roster = [] }) {
   return (
     <>
       {currentView === 'dashboard' && <LecturerDashboard users={users} tasks={tasks} completions={completions} studySessions={studySessions} />}
       {currentView === 'tasks' && <TaskManagement db={db} appId={appId} tasks={tasks} lecturerId={user.id} showToast={showToast} students={users.filter(u => u.role === 'student' && u.email)} />}
-      {currentView === 'progress' && <StudentProgress users={users} tasks={tasks} completions={completions} db={db} appId={appId} showToast={showToast} />}
+      {currentView === 'progress' && <StudentProgress users={users} roster={roster} tasks={tasks} completions={completions} db={db} appId={appId} showToast={showToast} />}
       {currentView === 'leaderboard' && <Leaderboard users={users} currentUser={user} />}
     </>
   );
@@ -58,7 +58,6 @@ function LecturerDashboard({ users, tasks, completions, studySessions }) {
     c => c.completedAt && new Date(c.completedAt).getTime() >= oneWeekAgo
   ).length;
 
-  // Feature 2: 7-Day Class Engagement Chart Data
   const last7Days = [...Array(7)].map((_, i) => {
     const d = new Date();
     d.setDate(d.getDate() - (6 - i));
@@ -79,7 +78,6 @@ function LecturerDashboard({ users, tasks, completions, studySessions }) {
   });
   const maxClassMinutes = Math.max(60, ...last7Days.map(d => d.minutes));
 
-  // Feature 1: At-Risk Students Detector
   const atRiskStudents = students.map(student => {
     const studentCompletions = (completions || []).filter(c => c.userId === student.id);
     const studentSessions = (studySessions || []).filter(s => s.userId === student.id);
@@ -145,7 +143,6 @@ function LecturerDashboard({ users, tasks, completions, studySessions }) {
         <p className="text-slate-500 mt-1">Monitor class activity, submissions, and deadline alerts.</p>
       </div>
 
-      {/* Top Metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
         <Card className="bg-gradient-to-br from-blue-600 to-blue-900 text-white border-none">
           <div className="flex items-center justify-between mb-3">
@@ -181,9 +178,7 @@ function LecturerDashboard({ users, tasks, completions, studySessions }) {
         </Card>
       </div>
 
-      {/* Feature 2 & Feature 1 Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Feature 2: 7-Day Class Engagement Chart */}
         <Card className="flex flex-col justify-between">
           <div className="flex items-center justify-between mb-6">
             <div>
@@ -226,7 +221,6 @@ function LecturerDashboard({ users, tasks, completions, studySessions }) {
           </div>
         </Card>
 
-        {/* Feature 1: At-Risk Students Detector */}
         <Card className="flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-4">
@@ -288,7 +282,6 @@ function LecturerDashboard({ users, tasks, completions, studySessions }) {
         </Card>
       </div>
 
-      {/* Upcoming Deadline Alerts */}
       <Card>
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -349,7 +342,6 @@ function LecturerDashboard({ users, tasks, completions, studySessions }) {
         )}
       </Card>
 
-      {/* Assignment Submission Tracker */}
       <Card>
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -407,7 +399,6 @@ function TaskManagement({ db, appId, tasks, lecturerId, showToast, students }) {
   const [uploading, setUploading] = useState(false);
   const [sendNotification, setSendNotification] = useState(true);
 
-  // Feature 4: Course Filter & Inline Edit State
   const [selectedCourseFilter, setSelectedCourseFilter] = useState('ALL');
   const [editingTaskId, setEditingTaskId] = useState(null);
   const [editTaskForm, setEditTaskForm] = useState({ title: '', course: '', deadline: '', description: '', resourceUrl: '' });
@@ -588,7 +579,6 @@ function TaskManagement({ db, appId, tasks, lecturerId, showToast, students }) {
         </form>
       </Card>
 
-      {/* Feature 4: Past Assignments with Course Filter & Edit */}
       <div>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 mt-8">
           <h3 className="text-xl font-bold text-slate-800">Past Assignments ({globalTasks.length})</h3>
@@ -732,7 +722,7 @@ function TaskManagement({ db, appId, tasks, lecturerId, showToast, students }) {
   );
 }
 
-function StudentProgress({ users, tasks, completions, db, appId, showToast }) {
+function StudentProgress({ users, roster = [], tasks, completions, db, appId, showToast }) {
   const students = users.filter(u => u.role === 'student');
   const [selectedCourseFilter, setSelectedCourseFilter] = useState('ALL');
   const globalTasks = tasks
@@ -743,6 +733,101 @@ function StudentProgress({ users, tasks, completions, db, appId, showToast }) {
   const [editingStudentId, setEditingStudentId] = useState(null);
   const [editName, setEditName] = useState('');
   const [editExp, setEditExp] = useState(0);
+
+  // State untuk manajemen Class Roster (Whitelist)
+  const [rosterNim, setRosterNim] = useState('');
+  const [rosterName, setRosterName] = useState('');
+  const [rosterEmail, setRosterEmail] = useState('');
+  const [addingRoster, setAddingRoster] = useState(false);
+  const [showBulkRoster, setShowBulkRoster] = useState(false);
+  const [bulkRosterText, setBulkRosterText] = useState('');
+
+  const handleAddRosterEntry = async (e) => {
+    e.preventDefault();
+    const cleanNim = rosterNim.trim();
+    const cleanName = rosterName.trim();
+    const rawEmail = rosterEmail.trim().toLowerCase();
+    const cleanEmail = rawEmail.includes('@') ? rawEmail : `${rawEmail}@mhs.uinjkt.ac.id`;
+
+    if (!/^\d+$/.test(cleanNim)) {
+      showToast?.('NIM must contain numbers only.');
+      return;
+    }
+    if (!cleanName || !rawEmail) {
+      showToast?.('NIM, Official Name, and Email are required.');
+      return;
+    }
+
+    setAddingRoster(true);
+    try {
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'studentRoster', cleanNim), {
+        nim: cleanNim,
+        name: cleanName,
+        email: cleanEmail,
+        addedAt: new Date().toISOString()
+      });
+      setRosterNim('');
+      setRosterName('');
+      setRosterEmail('');
+      showToast?.(`Added ${cleanName} (${cleanNim}) to class roster.`);
+    } catch (err) {
+      console.error(err);
+      showToast?.('Failed to add student to roster.');
+    } finally {
+      setAddingRoster(false);
+    }
+  };
+
+  const handleBulkImportRoster = async () => {
+    const lines = bulkRosterText.split('\n').map(l => l.trim()).filter(Boolean);
+    if (!lines.length) {
+      showToast?.('Paste at least one line (NIM, Name, Email).');
+      return;
+    }
+
+    setAddingRoster(true);
+    try {
+      let importedCount = 0;
+      for (const line of lines) {
+        const parts = line.split(/[,;\t|]+/).map(p => p.trim());
+        if (parts.length < 3) continue;
+        const [nimPart, namePart, emailPart] = parts;
+        if (!/^\d+$/.test(nimPart) || !namePart || !emailPart) continue;
+        const fullEmail = emailPart.includes('@') ? emailPart.toLowerCase() : `${emailPart.toLowerCase()}@mhs.uinjkt.ac.id`;
+
+        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'studentRoster', nimPart), {
+          nim: nimPart,
+          name: namePart,
+          email: fullEmail,
+          addedAt: new Date().toISOString()
+        });
+        importedCount++;
+      }
+
+      if (importedCount === 0) {
+        showToast?.('No valid rows found. Format: NIM, Full Name, Email');
+      } else {
+        setBulkRosterText('');
+        setShowBulkRoster(false);
+        showToast?.(`Successfully imported ${importedCount} student(s) to roster.`);
+      }
+    } catch (err) {
+      console.error(err);
+      showToast?.('Failed to import roster.');
+    } finally {
+      setAddingRoster(false);
+    }
+  };
+
+  const handleDeleteRosterEntry = async (nimId, name) => {
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'studentRoster', nimId));
+      showToast?.(`Removed ${name} from class roster.`);
+    } catch (err) {
+      console.error(err);
+      showToast?.('Failed to remove from roster.');
+    }
+  };
 
   const handleEdit = (student) => {
     setEditingStudentId(student.id);
@@ -775,18 +860,151 @@ function StudentProgress({ users, tasks, completions, db, appId, showToast }) {
     }
   };
 
+  const sortedRoster = [...roster].sort((a, b) => (a.nim || '').localeCompare(b.nim || ''));
+  const registeredNims = new Set(students.map(s => s.nim));
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
         <h1 className="text-3xl font-bold text-slate-900">Student Progress & Management</h1>
-        <p className="text-slate-500 mt-1">Monitor completion status and manage student accounts.</p>
+        <p className="text-slate-500 mt-1">Manage official class roster whitelist, verify student identities, and track submissions.</p>
       </div>
 
+      {/* Official Class Roster (Whitelist) */}
+      <Card className="border-blue-100 bg-blue-50/30">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <div>
+            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+              <ShieldCheck size={22} className="text-blue-600" />
+              Official Class Roster / Whitelist ({sortedRoster.length})
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Only students listed here can register, and their Full Name is automatically locked to this official record.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowBulkRoster(!showBulkRoster)}
+            className="px-3.5 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 self-start sm:self-auto"
+          >
+            <Upload size={14} /> {showBulkRoster ? 'Single Entry Mode' : 'Bulk Import List'}
+          </button>
+        </div>
+
+        {showBulkRoster ? (
+          <div className="space-y-3 mb-5 bg-white p-4 rounded-xl border border-slate-200">
+            <label className="block text-xs font-semibold text-slate-700">
+              Paste Student List (Format per line: <code className="bg-slate-100 px-1.5 py-0.5 rounded">NIM, Official Full Name, UIN Email</code>)
+            </label>
+            <textarea
+              rows={4}
+              value={bulkRosterText}
+              onChange={e => setBulkRosterText(e.target.value)}
+              placeholder={"11230910000001, Muhammad Ilham Jagad, ilham.jagad23@mhs.uinjkt.ac.id\n11230910000002, Farish Ahmad, farish.ahmad23@mhs.uinjkt.ac.id"}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <button
+              type="button"
+              disabled={addingRoster}
+              onClick={handleBulkImportRoster}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg disabled:opacity-50"
+            >
+              {addingRoster ? 'Importing...' : 'Import to Class Roster'}
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleAddRosterEntry} className="grid grid-cols-1 md:grid-cols-12 gap-3 mb-5 bg-white p-4 rounded-xl border border-slate-200">
+            <div className="md:col-span-3">
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Student ID (NIM)</label>
+              <input
+                required
+                type="text"
+                value={rosterNim}
+                onChange={e => setRosterNim(e.target.value)}
+                placeholder="11230910000001"
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+              />
+            </div>
+            <div className="md:col-span-4">
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Official Full Name</label>
+              <input
+                required
+                type="text"
+                value={rosterName}
+                onChange={e => setRosterName(e.target.value)}
+                placeholder="Muhammad Ilham Jagad"
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+              />
+            </div>
+            <div className="md:col-span-3">
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Institutional Email</label>
+              <input
+                required
+                type="text"
+                value={rosterEmail}
+                onChange={e => setRosterEmail(e.target.value)}
+                placeholder="ilham.jagad23@mhs.uinjkt.ac.id"
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+              />
+            </div>
+            <div className="md:col-span-2 flex items-end">
+              <button
+                type="submit"
+                disabled={addingRoster}
+                className="w-full py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-sm inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
+              >
+                <UserPlus size={16} /> Add
+              </button>
+            </div>
+          </form>
+        )}
+
+        <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100 max-h-60 overflow-y-auto">
+          {sortedRoster.length === 0 ? (
+            <p className="p-4 text-xs text-slate-500 italic text-center">
+              Class roster is empty. Add students above to allow them to register.
+            </p>
+          ) : (
+            sortedRoster.map(entry => {
+              const isActivated = registeredNims.has(entry.nim);
+              return (
+                <div key={entry.id} className="px-4 py-2.5 flex items-center justify-between gap-3 text-sm">
+                  <div className="min-w-0">
+                    <p className="font-bold text-slate-800 truncate">{entry.name}</p>
+                    <p className="text-xs text-slate-500 truncate">NIM: {entry.nim} · {entry.email}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {isActivated ? (
+                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-bold inline-flex items-center gap-1">
+                        <CheckCircle2 size={12} /> Verified Account
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[11px] font-semibold">
+                        Awaiting Registration
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteRosterEntry(entry.id, entry.name)}
+                      className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Remove from Roster"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </Card>
+
+      {/* Active Verified Students List */}
       <Card>
-        <h2 className="text-xl font-bold text-slate-800 mb-4">Student List ({students.length})</h2>
+        <h2 className="text-xl font-bold text-slate-800 mb-4">Active Verified Students ({students.length})</h2>
         <div className="divide-y divide-slate-100">
           {students.length === 0 ? (
-            <p className="text-slate-500 italic py-4">No students are registered yet.</p>
+            <p className="text-slate-500 italic py-4">No verified students are registered yet.</p>
           ) : (
             students.map(student => (
               <div key={student.id} className="py-3 flex items-center justify-between gap-4">
@@ -827,7 +1045,9 @@ function StudentProgress({ users, tasks, completions, db, appId, showToast }) {
                   <>
                     <div>
                       <p className="font-semibold text-slate-800">{student.name}</p>
-                      <p className="text-xs text-slate-500">Level {getLevel(student.exp || 0)} ({student.exp || 0} EXP)</p>
+                      <p className="text-xs text-slate-500">
+                        {student.nim ? `NIM: ${student.nim} · ` : ''}Level {getLevel(student.exp || 0)} ({student.exp || 0} EXP)
+                      </p>
                     </div>
                     <div className="flex items-center gap-2">
                       <button
@@ -853,7 +1073,6 @@ function StudentProgress({ users, tasks, completions, db, appId, showToast }) {
         </div>
       </Card>
 
-      {/* Feature 4: Course Filter for Assignment Submissions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
         <h2 className="text-xl font-bold text-slate-800">Assignment Submissions</h2>
         <div className="flex items-center gap-2">

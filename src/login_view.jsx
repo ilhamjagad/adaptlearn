@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
-import { BookOpen, ShieldCheck, User, Lock, Eye, EyeOff, ArrowRight, Mail } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { BookOpen, ShieldCheck, Lock, Eye, EyeOff, ArrowRight, CheckCircle2, Search } from 'lucide-react';
 import uinLogo from './assets/uin_logo.jpg';
 import bgLogin from './assets/bg-login.webp';
 
-export function LoginView({ onLogin, onRegister, onForgotPassword }) {
+export function LoginView({ onLogin, onRegister, onForgotPassword, onLookupRoster }) {
   const [role, setRole] = useState('student');
   const [isRegistering, setIsRegistering] = useState(false);
   const [identifier, setIdentifier] = useState('');
@@ -11,10 +11,75 @@ export function LoginView({ onLogin, onRegister, onForgotPassword }) {
   const [emailName, setEmailName] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
+  const [rosterVerified, setRosterVerified] = useState(false);
+  const [checkingRoster, setCheckingRoster] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
+
+  // Otomatis cek NIM + Email ke Class Roster saat keduanya diisi
+  useEffect(() => {
+    if (!isRegistering || !onLookupRoster) return;
+
+    const cleanNim = nim.trim();
+    const cleanEmailPrefix = emailName.trim();
+
+    setRosterVerified(false);
+    setFullName('');
+
+    if (!/^\d{6,}$/.test(cleanNim) || cleanEmailPrefix.length < 2) {
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setCheckingRoster(true);
+      try {
+        const fullEmail = `${cleanEmailPrefix}@mhs.uinjkt.ac.id`;
+        const match = await onLookupRoster(cleanNim, fullEmail);
+        setFullName(match.name);
+        setRosterVerified(true);
+        setError(null);
+      } catch {
+        setFullName('');
+        setRosterVerified(false);
+      } finally {
+        setCheckingRoster(false);
+      }
+    }, 450);
+
+    return () => clearTimeout(timer);
+  }, [nim, emailName, isRegistering, onLookupRoster]);
+
+  const handleManualVerifyRoster = async () => {
+    setError(null);
+    const cleanNim = nim.trim();
+    const cleanEmailPrefix = emailName.trim();
+
+    if (!/^\d+$/.test(cleanNim)) {
+      setError('NIM must contain numbers only.');
+      return;
+    }
+    if (!cleanEmailPrefix) {
+      setError('Please enter your institutional email prefix.');
+      return;
+    }
+
+    setCheckingRoster(true);
+    try {
+      const fullEmail = `${cleanEmailPrefix}@mhs.uinjkt.ac.id`;
+      const match = await onLookupRoster(cleanNim, fullEmail);
+      setFullName(match.name);
+      setRosterVerified(true);
+      setError(null);
+    } catch (err) {
+      setFullName('');
+      setRosterVerified(false);
+      setError(err.message);
+    } finally {
+      setCheckingRoster(false);
+    }
+  };
 
   const handleForgotPassword = async () => {
     const value = identifier.trim();
@@ -40,7 +105,6 @@ export function LoginView({ onLogin, onRegister, onForgotPassword }) {
     setError(null);
     setSuccessMsg(null);
 
-    // Password Validation for Registration
     if (isRegistering) {
       const passwordRegex = /^(?=.*[A-Z])(?=.*\d)[A-Za-z\d]{6,}$/;
       if (!passwordRegex.test(password)) {
@@ -48,18 +112,18 @@ export function LoginView({ onLogin, onRegister, onForgotPassword }) {
         return;
       }
       
-      if (!/^\d+$/.test(nim)) {
-        setError('NIM harus berupa angka.');
-        return;
-      }
-
-      if (!/^[A-Z][a-z]+(?: [A-Z][a-z]+)+$/.test(fullName.trim())) {
-        setError('Enter your full name with each name capitalized, e.g. Ilham Jagad.');
+      if (!/^\d+$/.test(nim.trim())) {
+        setError('NIM must contain numbers only.');
         return;
       }
 
       if (!emailName.trim()) {
-        setError('Bagian email wajib diisi.');
+        setError('Email field is required.');
+        return;
+      }
+
+      if (!rosterVerified || !fullName) {
+        setError('Your NIM and Email must match the official class roster before registering.');
         return;
       }
     }
@@ -68,7 +132,7 @@ export function LoginView({ onLogin, onRegister, onForgotPassword }) {
 
     try {
       if (isRegistering) {
-        const constructedEmail = `${emailName.trim()}@mhs.uinjkt.ac.id`;
+        const constructedEmail = `${emailName.trim().toLowerCase()}@mhs.uinjkt.ac.id`;
         await onRegister(constructedEmail, password, fullName, role, nim.trim());
       } else {
         await onLogin(identifier.trim(), password, role);
@@ -133,7 +197,7 @@ export function LoginView({ onLogin, onRegister, onForgotPassword }) {
               {isRegistering ? 'Create Account' : 'Sign In'}
             </h2>
             <p className="text-slate-500 text-sm mt-1">
-              {isRegistering ? 'Register new account to access the portal' : 'Enter your credentials to access the portal'}
+              {isRegistering ? 'Verify your NIM & UIN email against the class roster' : 'Enter your credentials to access the portal'}
             </p>
           </div>
 
@@ -183,18 +247,66 @@ export function LoginView({ onLogin, onRegister, onForgotPassword }) {
             {isRegistering && (
               <>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Full Name</label>
-                  <input type="text" required value={fullName} onChange={e => setFullName(e.target.value)} pattern="[A-Z][a-z]+( [A-Z][a-z]+)+" title="Use capitalized names separated by spaces, e.g. Ilham Jagad." className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0057D9]" />
-                </div>
-                <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1.5">Student ID (NIM)</label>
-                  <input type="text" required value={nim} onChange={e => setNim(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0057D9]" />
+                  <input
+                    type="text"
+                    required
+                    value={nim}
+                    onChange={e => setNim(e.target.value)}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0057D9]"
+                  />
                 </div>
+
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Email</label>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Institutional Email</label>
                   <div className="flex items-center gap-2">
-                    <input type="text" required value={emailName} onChange={e => setEmailName(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0057D9]" placeholder="name" />
-                    <span className="text-slate-500 text-sm whitespace-nowrap">@mhs.uinjkt.ac.id</span>
+                    <input
+                      type="text"
+                      required
+                      value={emailName}
+                      onChange={e => setEmailName(e.target.value)}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0057D9]"
+                    />
+                    <span className="text-slate-500 text-xs sm:text-sm whitespace-nowrap">@mhs.uinjkt.ac.id</span>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-semibold text-slate-600">
+                      Official Full Name
+                    </label>
+                    {rosterVerified ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600">
+                        <CheckCircle2 size={13} /> Roster Verified
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleManualVerifyRoster}
+                        disabled={checkingRoster}
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-[#0057D9] hover:underline disabled:opacity-50"
+                      >
+                        <Search size={12} /> {checkingRoster ? 'Checking...' : 'Check Roster'}
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      readOnly
+                      required
+                      value={fullName}
+                      placeholder={checkingRoster ? 'Verifying class roster...' : 'Auto-filled from official class roster'}
+                      className={`w-full px-4 py-3 pr-10 border rounded-2xl text-sm font-semibold cursor-not-allowed focus:outline-none ${
+                        rosterVerified
+                          ? 'bg-emerald-50/70 border-emerald-300 text-emerald-950'
+                          : 'bg-slate-100 border-slate-200 text-slate-500'
+                      }`}
+                    />
+                    <span className="absolute inset-y-0 right-3.5 flex items-center text-slate-400 pointer-events-none">
+                      <Lock size={15} />
+                    </span>
                   </div>
                 </div>
               </>
@@ -251,8 +363,8 @@ export function LoginView({ onLogin, onRegister, onForgotPassword }) {
 
             <button
               type="submit"
-              disabled={loading}
-              className="w-full mt-3 flex items-center justify-center gap-2 py-3.5 bg-[#0057D9] hover:bg-[#0047B3] text-white font-bold rounded-2xl shadow-lg shadow-blue-500/25 transition-all text-base disabled:opacity-50"
+              disabled={loading || (isRegistering && !rosterVerified)}
+              className="w-full mt-3 flex items-center justify-center gap-2 py-3.5 bg-[#0057D9] hover:bg-[#0047B3] text-white font-bold rounded-2xl shadow-lg shadow-blue-500/25 transition-all text-base disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <span>{loading ? 'Processing...' : (isRegistering ? `Register as ${role === 'student' ? 'Student' : 'Lecturer'}` : `Sign In as ${role === 'student' ? 'Student' : 'Lecturer'}`)}</span>
               {!loading && <ArrowRight size={18} />}
@@ -264,7 +376,7 @@ export function LoginView({ onLogin, onRegister, onForgotPassword }) {
               <>
                 Already have an account?{' '}
                 <button onClick={() => { setIsRegistering(false); setError(null); }} className="font-semibold text-[#0057D9] hover:underline focus:outline-none">
-                  Sign In here
+                  Sign In
                 </button>
               </>
             ) : (
