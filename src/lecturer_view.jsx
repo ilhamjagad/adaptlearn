@@ -30,7 +30,8 @@ export function LecturerView({ user, tasks, completions, studySessions, currentV
     <>
       {currentView === 'dashboard' && <LecturerDashboard users={users} tasks={tasks} completions={completions} studySessions={studySessions} />}
       {currentView === 'tasks' && <TaskManagement db={db} appId={appId} tasks={tasks} lecturerId={user.id} showToast={showToast} students={users.filter(u => u.role === 'student' && u.email)} />}
-      {currentView === 'progress' && <StudentProgress users={users} roster={roster} tasks={tasks} completions={completions} db={db} appId={appId} showToast={showToast} />}
+      {currentView === 'submissions' && <AssignmentSubmissions users={users} tasks={tasks} completions={completions} />}
+      {currentView === 'progress' && <StudentProgress users={users} roster={roster} db={db} appId={appId} showToast={showToast} />}
       {currentView === 'leaderboard' && <Leaderboard users={users} currentUser={user} />}
     </>
   );
@@ -722,19 +723,141 @@ function TaskManagement({ db, appId, tasks, lecturerId, showToast, students }) {
   );
 }
 
-function StudentProgress({ users, roster = [], tasks, completions, db, appId, showToast }) {
+function AssignmentSubmissions({ users, tasks, completions }) {
   const students = users.filter(u => u.role === 'student');
   const [selectedCourseFilter, setSelectedCourseFilter] = useState('ALL');
+  const [expandedSubmission, setExpandedSubmission] = useState(null);
+
   const globalTasks = tasks
     .filter(t => t.type === 'global')
-    .filter(t => selectedCourseFilter === 'ALL' || t.course === selectedCourseFilter);
+    .filter(t => selectedCourseFilter === 'ALL' || t.course === selectedCourseFilter)
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 
-  const [expandedSubmission, setExpandedSubmission] = useState(null);
+  return (
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900">Assignment Submissions</h1>
+          <p className="text-slate-500 mt-1">Review and inspect student task submissions across courses.</p>
+        </div>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <Filter size={16} className="text-slate-400" />
+          <select
+            value={selectedCourseFilter}
+            onChange={e => setSelectedCourseFilter(e.target.value)}
+            className="px-3 py-2 rounded-xl border border-slate-300 bg-white text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="ALL">All Courses</option>
+            {COURSES.map(course => (
+              <option key={course} value={course}>{course}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {globalTasks.length === 0 ? (
+        <Card className="text-center p-8 text-slate-500">
+          {selectedCourseFilter === 'ALL'
+            ? 'Create an assignment in Task Management first.'
+            : `No assignments found for ${selectedCourseFilter}.`}
+        </Card>
+      ) : (
+        <div className="space-y-8">
+          {globalTasks.map(task => {
+            const taskCompletions = completions.filter(c => c.taskId === task.id);
+            const completionRate = students.length > 0 ? (taskCompletions.length / students.length) * 100 : 0;
+            
+            return (
+              <Card key={task.id} className="overflow-hidden p-0">
+                <div className="p-6 bg-slate-50 border-b border-slate-100">
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <h3 className="font-bold text-lg text-slate-900">{task.course ? `${task.title} - ${task.course}` : task.title}</h3>
+                      <p className="text-sm text-slate-500">Due: {new Date(task.deadline).toLocaleDateString('en-GB')}</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-2xl font-bold text-indigo-600">{Math.round(completionRate)}%</span>
+                      <p className="text-xs text-slate-500 uppercase tracking-wide font-semibold">
+                        {taskCompletions.length} / {students.length} Submitted
+                      </p>
+                    </div>
+                  </div>
+                  <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
+                    <div className="h-full bg-blue-600 rounded-full" style={{ width: `${completionRate}%` }}></div>
+                  </div>
+                </div>
+                
+                <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto">
+                  {students.length === 0 ? (
+                    <p className="px-6 py-4 text-sm text-slate-500 italic">No verified students registered yet.</p>
+                  ) : (
+                    students.map(student => {
+                      const isCompleted = taskCompletions.some(c => c.userId === student.id);
+                      return (
+                        <div key={student.id} className="px-6 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-slate-50 transition-colors">
+                          <div>
+                            <span className="font-medium text-slate-700">{student.name}</span>
+                            {student.nim && <span className="ml-2 text-xs text-slate-400">({student.nim})</span>}
+                          </div>
+                          <div className="flex flex-col sm:items-end">
+                            {isCompleted ? (
+                              <div className="flex items-center gap-2">
+                                <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full flex items-center gap-1">
+                                  <CheckSquare size={12} /> Submitted
+                                </span>
+                                <button
+                                  onClick={() => setExpandedSubmission(expandedSubmission === `${task.id}-${student.id}` ? null : `${task.id}-${student.id}`)}
+                                  className="text-xs font-semibold text-blue-600 hover:underline"
+                                >
+                                  {expandedSubmission === `${task.id}-${student.id}` ? 'Hide submission' : 'View submission'}
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="px-2 py-1 bg-slate-100 text-slate-500 text-xs font-bold rounded-full flex items-center gap-1">
+                                <Clock size={12} /> Pending
+                              </span>
+                            )}
+                            {isCompleted && expandedSubmission === `${task.id}-${student.id}` && (() => {
+                              const submission = taskCompletions
+                                .filter(c => c.userId === student.id && c.submissionData)
+                                .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))[0];
+                              if (!submission?.submissionData) return <p className="mt-2 text-xs text-slate-500">No attachment or link submitted.</p>;
+                              const submissionType = submission.submissionType || (submission.submissionData.startsWith('data:image/') ? 'image' : /^https?:\/\//i.test(submission.submissionData) ? 'url' : 'file');
+                              return (
+                                <div className="mt-2 space-y-2">
+                                  {submissionType === 'url' ? (
+                                    <a href={submission.submissionData} target="_blank" rel="noreferrer" className="block text-sm text-blue-600 underline break-all">{submission.submissionData}</a>
+                                  ) : submissionType === 'image' ? (
+                                    <a href={submission.submissionData} target="_blank" rel="noreferrer" className="block"><img src={submission.submissionData} alt="Student submission" className="max-h-48 rounded-lg border border-slate-200" /></a>
+                                  ) : (
+                                    <a href={submission.submissionData} download={`submission-${student.id}`} className="inline-block text-sm text-blue-600 underline">Download submitted file</a>
+                                  )}
+                                  {submission.submissionUrl && <a href={submission.submissionUrl} target="_blank" rel="noreferrer" className="block text-sm text-blue-600 underline break-all">{submission.submissionUrl}</a>}
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StudentProgress({ users, roster = [], db, appId, showToast }) {
+  const students = users.filter(u => u.role === 'student');
+
   const [editingStudentId, setEditingStudentId] = useState(null);
   const [editName, setEditName] = useState('');
   const [editExp, setEditExp] = useState(0);
 
-  // State untuk manajemen Class Roster (Whitelist)
   const [rosterNim, setRosterNim] = useState('');
   const [rosterName, setRosterName] = useState('');
   const [rosterEmail, setRosterEmail] = useState('');
@@ -867,10 +990,9 @@ function StudentProgress({ users, roster = [], tasks, completions, db, appId, sh
     <div className="space-y-6 animate-fade-in">
       <div>
         <h1 className="text-3xl font-bold text-slate-900">Student Progress & Management</h1>
-        <p className="text-slate-500 mt-1">Manage official class roster whitelist, verify student identities, and track submissions.</p>
+        <p className="text-slate-500 mt-1">Manage official class roster whitelist, verify student identities, and track student levels.</p>
       </div>
 
-      {/* Official Class Roster (Whitelist) */}
       <Card className="border-blue-100 bg-blue-50/30">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <div>
@@ -999,7 +1121,6 @@ function StudentProgress({ users, roster = [], tasks, completions, db, appId, sh
         </div>
       </Card>
 
-      {/* Active Verified Students List */}
       <Card>
         <h2 className="text-xl font-bold text-slate-800 mb-4">Active Verified Students ({students.length})</h2>
         <div className="divide-y divide-slate-100">
@@ -1072,107 +1193,6 @@ function StudentProgress({ users, roster = [], tasks, completions, db, appId, sh
           )}
         </div>
       </Card>
-
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
-        <h2 className="text-xl font-bold text-slate-800">Assignment Submissions</h2>
-        <div className="flex items-center gap-2">
-          <Filter size={16} className="text-slate-400" />
-          <select
-            value={selectedCourseFilter}
-            onChange={e => setSelectedCourseFilter(e.target.value)}
-            className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="ALL">All Courses</option>
-            {COURSES.map(course => (
-              <option key={course} value={course}>{course}</option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {globalTasks.length === 0 ? (
-        <Card className="text-center p-8 text-slate-500">
-          {selectedCourseFilter === 'ALL'
-            ? 'Create an assignment in Task Management first.'
-            : `No assignments found for ${selectedCourseFilter}.`}
-        </Card>
-      ) : (
-        <div className="space-y-8">
-          {globalTasks.map(task => {
-            const taskCompletions = completions.filter(c => c.taskId === task.id);
-            const completionRate = students.length > 0 ? (taskCompletions.length / students.length) * 100 : 0;
-            
-            return (
-              <Card key={task.id} className="overflow-hidden p-0">
-                <div className="p-6 bg-slate-50 border-b border-slate-100">
-                  <div className="flex justify-between items-start mb-4">
-                    <div>
-                      <h3 className="font-bold text-lg text-slate-900">{task.course ? `${task.title} - ${task.course}` : task.title}</h3>
-                      <p className="text-sm text-slate-500">Due: {new Date(task.deadline).toLocaleDateString('en-GB')}</p>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-2xl font-bold text-indigo-600">{Math.round(completionRate)}%</span>
-                      <p className="text-xs text-slate-500 uppercase tracking-wide font-semibold">Completion</p>
-                    </div>
-                  </div>
-                  <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-600 rounded-full" style={{ width: `${completionRate}%` }}></div>
-                  </div>
-                </div>
-                
-                <div className="divide-y divide-slate-100 max-h-64 overflow-y-auto">
-                  {students.map(student => {
-                    const isCompleted = taskCompletions.some(c => c.userId === student.id);
-                    return (
-                      <div key={student.id} className="px-6 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-slate-50 transition-colors">
-                        <span className="font-medium text-slate-700">{student.name}</span>
-                        <div className="flex flex-col sm:items-end">
-                          {isCompleted ? (
-                            <div className="flex items-center gap-2">
-                              <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full flex items-center gap-1">
-                                <CheckSquare size={12} /> Submitted
-                              </span>
-                              <button
-                                onClick={() => setExpandedSubmission(expandedSubmission === `${task.id}-${student.id}` ? null : `${task.id}-${student.id}`)}
-                                className="text-xs font-semibold text-blue-600 hover:underline"
-                              >
-                                {expandedSubmission === `${task.id}-${student.id}` ? 'Hide submission' : 'View submission'}
-                              </button>
-                            </div>
-                          ) : (
-                            <span className="px-2 py-1 bg-slate-100 text-slate-500 text-xs font-bold rounded-full flex items-center gap-1">
-                              <Clock size={12} /> Pending
-                            </span>
-                          )}
-                          {isCompleted && expandedSubmission === `${task.id}-${student.id}` && (() => {
-                            const submission = taskCompletions
-                              .filter(c => c.userId === student.id && c.submissionData)
-                              .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))[0];
-                            if (!submission?.submissionData) return <p className="mt-2 text-xs text-slate-500">No attachment or link submitted.</p>;
-                            const submissionType = submission.submissionType || (submission.submissionData.startsWith('data:image/') ? 'image' : /^https?:\/\//i.test(submission.submissionData) ? 'url' : 'file');
-                            return (
-                              <div className="mt-2 space-y-2">
-                                {submissionType === 'url' ? (
-                                  <a href={submission.submissionData} target="_blank" rel="noreferrer" className="block text-sm text-blue-600 underline break-all">{submission.submissionData}</a>
-                                ) : submissionType === 'image' ? (
-                                  <a href={submission.submissionData} target="_blank" rel="noreferrer" className="block"><img src={submission.submissionData} alt="Student submission" className="max-h-48 rounded-lg border border-slate-200" /></a>
-                                ) : (
-                                  <a href={submission.submissionData} download={`submission-${student.id}`} className="inline-block text-sm text-blue-600 underline">Download submitted file</a>
-                                )}
-                                {submission.submissionUrl && <a href={submission.submissionUrl} target="_blank" rel="noreferrer" className="block text-sm text-blue-600 underline break-all">{submission.submissionUrl}</a>}
-                              </div>
-                            );
-                          })()}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </Card>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { initializeApp } from "firebase/app";
 import { getAuth, onAuthStateChanged, signInWithCustomToken, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification, reload, getIdToken } from "firebase/auth";
 import { getFirestore, collection, onSnapshot, doc, updateDoc, setDoc, getDoc, deleteDoc, query, where, getDocs, addDoc } from "firebase/firestore";
-import { Clock, CheckSquare, Users, Trophy, LayoutDashboard, LogOut, Menu, X, UserRound, Sparkles, MailCheck } from 'lucide-react';
+import { Clock, CheckSquare, Users, Trophy, LayoutDashboard, LogOut, Menu, X, UserRound, Sparkles, MailCheck, ClipboardCheck } from 'lucide-react';
 import { LoginView } from './login_view';
 import { StudentView } from './student_view';
 import { LecturerView } from './lecturer_view';
@@ -35,7 +35,6 @@ const getLevel = (exp) => {
   return level;
 };
 
-// Sinkronisasi profil student ke koleksi users hanya setelah email terverifikasi
 const finalizeVerifiedStudent = async (firebaseUser) => {
   if (!firebaseUser || !firebaseUser.emailVerified || firebaseUser.email === 'dosen@uinjkt.ac.id') {
     return null;
@@ -54,7 +53,6 @@ const finalizeVerifiedStudent = async (firebaseUser) => {
   const pendingSnap = await getDoc(pendingDocRef);
   const pendingData = pendingSnap.exists() ? pendingSnap.data() : {};
 
-  // Pastikan ulang nama tetap merujuk ke studentRoster resmi jika ada
   let officialName = pendingData.name || firebaseUser.displayName || 'Student';
   if (pendingData.nim) {
     const rosterSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'studentRoster', pendingData.nim));
@@ -197,7 +195,6 @@ export default function AdaptLearn() {
     };
   }, [user]);
 
-  // Cek kecocokan NIM & Email terhadap Whitelist Roster kelas
   const handleLookupRoster = async (nimInput, emailInput) => {
     const cleanNim = nimInput.trim();
     const cleanEmail = emailInput.trim().toLowerCase();
@@ -264,7 +261,6 @@ export default function AdaptLearn() {
       if (!snap.empty) {
         email = snap.docs[0].data().email;
       } else {
-        // Ambil email dari studentRoster jika student baru pertama kali login setelah verifikasi email
         const rosterSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'studentRoster', email));
         if (!rosterSnap.exists() || !rosterSnap.data().email) {
           throw new Error('Student ID (NIM) is not registered in the class roster.');
@@ -320,15 +316,12 @@ export default function AdaptLearn() {
     const cleanNim = nim.trim();
     const cleanEmail = email.trim().toLowerCase();
 
-    // 1. Validasi ketat terhadap Whitelist Roster kelas & ambil nama resmi dari database
     const verifiedRoster = await handleLookupRoster(cleanNim, cleanEmail);
 
-    // 2. Cek apakah NIM sudah terdaftar aktif di users
     const nimQuery = query(collection(db, 'artifacts', appId, 'public', 'data', 'users'), where('nim', '==', cleanNim), where('role', '==', 'student'));
     const nimSnapshot = await getDocs(nimQuery);
     if (!nimSnapshot.empty) throw new Error('This Student ID (NIM) is already registered.');
 
-    // 3. Buat akun Firebase Auth & simpan data sementara ke pendingUsers memakai NAMA RESMI ROSTER
     const credential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
 
     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'pendingUsers', credential.user.uid), {
@@ -454,6 +447,7 @@ export default function AdaptLearn() {
             <>
               <NavItem icon={<LayoutDashboard size={20} />} label="Overview" isActive={currentView === 'dashboard'} onClick={() => { setCurrentView('dashboard'); setSidebarOpen(false); }} />
               <NavItem icon={<CheckSquare size={20} />} label="Task Management" isActive={currentView === 'tasks'} onClick={() => { setCurrentView('tasks'); setSidebarOpen(false); }} />
+              <NavItem icon={<ClipboardCheck size={20} />} label="Assignment Submissions" isActive={currentView === 'submissions'} onClick={() => { setCurrentView('submissions'); setSidebarOpen(false); }} />
               <NavItem icon={<Users size={20} />} label="Student Progress" isActive={currentView === 'progress'} onClick={() => { setCurrentView('progress'); setSidebarOpen(false); }} />
               <NavItem icon={<Trophy size={20} />} label="Leaderboard" isActive={currentView === 'leaderboard'} onClick={() => { setCurrentView('leaderboard'); setSidebarOpen(false); }} />
             </>
