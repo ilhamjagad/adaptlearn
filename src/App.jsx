@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from "firebase/app";
-import { getAuth, onAuthStateChanged, signInWithCustomToken, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification } from "firebase/auth";
-import { getFirestore, collection, onSnapshot, doc, updateDoc, setDoc, getDoc, query, where, getDocs, addDoc } from "firebase/firestore";
+import { getAuth, onAuthStateChanged, signInWithCustomToken, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, sendEmailVerification, reload, getIdToken } from "firebase/auth";
+import { getFirestore, collection, onSnapshot, doc, updateDoc, setDoc, getDoc, deleteDoc, query, where, getDocs, addDoc } from "firebase/firestore";
 import { Clock, CheckSquare, Users, Trophy, LayoutDashboard, LogOut, Menu, X, UserRound, Sparkles, MailCheck } from 'lucide-react';
 import { LoginView } from './login_view';
 import { StudentView } from './student_view';
@@ -35,6 +35,46 @@ const getLevel = (exp) => {
   return level;
 };
 
+// Fungsi sinkronisasi profil student setelah verifikasi email berhasil
+const finalizeVerifiedStudent = async (firebaseUser) => {
+  if (!firebaseUser || !firebaseUser.emailVerified || firebaseUser.email === 'dosen@uinjkt.ac.id') {
+    return null;
+  }
+
+  await getIdToken(firebaseUser, true); // Paksa refresh JWT token agar Firestore Rules membaca email_verified = true
+
+  const userDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', firebaseUser.uid);
+  const profileSnap = await getDoc(userDocRef);
+
+  if (profileSnap.exists()) {
+    return profileSnap.data();
+  }
+
+  // Ambil data sementara dari pendingUsers (jika ada)
+  const pendingDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'pendingUsers', firebaseUser.uid);
+  const pendingSnap = await getDoc(pendingDocRef);
+  const pendingData = pendingSnap.exists() ? pendingSnap.data() : {};
+
+  const studentProfile = {
+    name: pendingData.name || firebaseUser.displayName || 'Student',
+    email: firebaseUser.email,
+    nim: pendingData.nim || '',
+    role: 'student',
+    exp: 0,
+    emailNotifsEnabled: false,
+    createdAt: pendingData.createdAt || new Date().toISOString(),
+    emailVerified: true
+  };
+
+  await setDoc(userDocRef, studentProfile);
+
+  if (pendingSnap.exists()) {
+    await deleteDoc(pendingDocRef);
+  }
+
+  return studentProfile;
+};
+
 export default function AdaptLearn() {
   const [user, setUser] = useState(null);
   const [dbUser, setDbUser] = useState(null);
@@ -54,6 +94,11 @@ export default function AdaptLearn() {
     .filter(task => (task.type === 'global' || task.ownerId === dbUser?.id) && !completedTaskIds.includes(task.id))
     .sort((a, b) => new Date(a.deadline) - new Date(b.deadline))[0] || null;
 
+  const showToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 4000);
+  };
+
   useEffect(() => {
     if (!auth) return;
     const initAuth = async () => {
@@ -67,19 +112,36 @@ export default function AdaptLearn() {
     };
     initAuth();
 
-    const unsubscribe = onAuthStateChanged(auth, (authUser) => {
-      setUser(authUser);
+    const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
       if (!authUser) {
+        setUser(null);
         setDbUser(null);
         setAllUsers([]);
         setTasks([]);
         setCompletions([]);
         setStudySessions([]);
-      } else {
-        setVerificationBanner(null);
+        setLoading(false);
+        return;
       }
-      setLoading(false);
+
+      try {
+        await reload(authUser);
+        const freshUser = auth.currentUser || authUser;
+
+        if (freshUser.emailVerified && freshUser.email !== 'dosen@uinjkt.ac.id') {
+          await finalizeVerifiedStudent(freshUser);
+        }
+
+        setUser(freshUser);
+        setVerificationBanner(null);
+      } catch (err) {
+        console.error("Gagal sinkronisasi profil ke Firestore:", err);
+        showToast("Database error: " + err.message);
+      } finally {
+        setLoading(false);
+      }
     });
+
     return () => unsubscribe();
   }, []);
 
@@ -119,11 +181,6 @@ export default function AdaptLearn() {
     };
   }, [user]);
 
-  const showToast = (msg) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 4000);
-  };
-
   const handleLogin = async (identifier, password, role) => {
     if (role === 'lecturer' && identifier === 'dosen@uinjkt.ac.id' && password === 'dosen123') {
       const usersRef = collection(db, 'artifacts', appId, 'public', 'data', 'users');
@@ -161,10 +218,15 @@ export default function AdaptLearn() {
       const usersRef = collection(db, 'artifacts', appId, 'public', 'data', 'users');
       const q = query(usersRef, where('nim', '==', email), where('role', '==', 'student'));
       const snap = await getDocs(q);
-      if (snap.empty) throw new Error('Student ID (NIM) or email is not registered.');
+      if (snap.empty) {
+        throw new Error('Student ID (NIM) is not registered or your email has not been verified yet. Please sign in with your email first.');
+      }
       email = snap.docs[0].data().email;
     }
+
     const credential = await signInWithEmailAndPassword(auth, email, password);
+    await reload(credential.user);
+
     if (role === 'student' && !credential.user.emailVerified) {
       await signOut(auth);
       setVerificationBanner({
@@ -174,6 +236,11 @@ export default function AdaptLearn() {
       });
       throw new Error('Please verify your email before signing in. Check your inbox for the verification link.');
     }
+
+    if (role === 'student' && credential.user.emailVerified) {
+      await finalizeVerifiedStudent(credential.user);
+    }
+
     const profileSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', credential.user.uid));
     if (!profileSnap.exists() || profileSnap.data().role !== role) {
       await signOut(auth);
@@ -196,21 +263,21 @@ export default function AdaptLearn() {
     const nimQuery = query(collection(db, 'artifacts', appId, 'public', 'data', 'users'), where('nim', '==', nim), where('role', '==', 'student'));
     const nimSnapshot = await getDocs(nimQuery);
     if (!nimSnapshot.empty) throw new Error('This Student ID (NIM) is already registered.');
+
     const credential = await createUserWithEmailAndPassword(auth, email, password);
-    await sendEmailVerification(credential.user);
-    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', credential.user.uid), {
-      name,
+
+    // Simpan ke pendingUsers sementara (bukan ke users) hingga email diverifikasi
+    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'pendingUsers', credential.user.uid), {
+      name: name.trim(),
       email,
-      nim,
-      role,
-      exp: 0,
-      emailNotifsEnabled: false,
-      createdAt: new Date().toISOString(),
-      emailVerified: false
+      nim: nim.trim(),
+      role: 'student',
+      createdAt: new Date().toISOString()
     });
+
+    await sendEmailVerification(credential.user);
     await signOut(auth);
 
-    // Tampilkan notifikasi verifikasi email mengambang di dalam aplikasi tanpa merubah UI LoginView
     setVerificationBanner({
       type: 'info',
       title: 'Email Verification is Required',
