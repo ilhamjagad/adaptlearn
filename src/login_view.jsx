@@ -218,7 +218,7 @@ export function LoginView({ onLogin, onRegister, onForgotPassword, onLookupRoste
             <button
               type="button"
               disabled={isRegistering}
-              onClick={() => { setRole('lecturer'); setError(null); }}
+              onClick={() => { setRole('lecturer'); setError(null); setIsRegistering(false); }}
               className={`flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-sm transition-all ${
                 role === 'lecturer' 
                   ? 'bg-[#0057D9] text-white shadow-md' 
@@ -371,23 +371,25 @@ export function LoginView({ onLogin, onRegister, onForgotPassword, onLookupRoste
             </button>
           </form>
 
-          <div className="mt-6 pt-5 border-t border-slate-100 text-center text-sm text-slate-500">
-            {isRegistering ? (
-              <>
-                Already have an account?{' '}
-                <button onClick={() => { setIsRegistering(false); setError(null); }} className="font-semibold text-[#0057D9] hover:underline focus:outline-none">
-                  Sign In
-                </button>
-              </>
-            ) : (
-              <>
-                Don't have an account?{' '}
-                <button onClick={() => { setIsRegistering(true); setError(null); }} className="font-semibold text-[#0057D9] hover:underline focus:outline-none">
-                  Register here
-                </button>
-              </>
-            )}
-          </div>
+          {role === 'student' && (
+            <div className="mt-6 pt-5 border-t border-slate-100 text-center text-sm text-slate-500">
+              {isRegistering ? (
+                <>
+                  Already have an account?{' '}
+                  <button onClick={() => { setIsRegistering(false); setError(null); }} className="font-semibold text-[#0057D9] hover:underline focus:outline-none">
+                    Sign In
+                  </button>
+                </>
+              ) : (
+                <>
+                  Don't have an account?{' '}
+                  <button onClick={() => { setIsRegistering(true); setError(null); }} className="font-semibold text-[#0057D9] hover:underline focus:outline-none">
+                    Register here
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
       </div>
