@@ -3275,8 +3275,7 @@ function TodoList({
                   <div className="mt-3">
                     <div>
                       {task.description &&
-                        (task.type === "personal" &&
-                        /<[a-z][\s\S]*>/i.test(task.description) ? (
+                        (/<[a-z][\s\S]*>/i.test(task.description) ? (
                           <div
                             className="text-sm text-slate-700 bg-slate-50 border border-slate-200/80 rounded-xl px-4 py-3 mb-3 leading-relaxed [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
                             dangerouslySetInnerHTML={{

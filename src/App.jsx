@@ -448,7 +448,7 @@ export default function AdaptLearn() {
               <NavItem icon={<LayoutDashboard size={20} />} label="Overview" isActive={currentView === 'dashboard'} onClick={() => { setCurrentView('dashboard'); setSidebarOpen(false); }} />
               <NavItem icon={<CheckSquare size={20} />} label="Task Management" isActive={currentView === 'tasks'} onClick={() => { setCurrentView('tasks'); setSidebarOpen(false); }} />
               <NavItem icon={<ClipboardCheck size={20} />} label="Assignment Submissions" isActive={currentView === 'submissions'} onClick={() => { setCurrentView('submissions'); setSidebarOpen(false); }} />
-              <NavItem icon={<Users size={20} />} label="Student Progress" isActive={currentView === 'progress'} onClick={() => { setCurrentView('progress'); setSidebarOpen(false); }} />
+              <NavItem icon={<Users size={20} />} label="Student Management" isActive={currentView === 'progress'} onClick={() => { setCurrentView('progress'); setSidebarOpen(false); }} />
               <NavItem icon={<Trophy size={20} />} label="Leaderboard" isActive={currentView === 'leaderboard'} onClick={() => { setCurrentView('leaderboard'); setSidebarOpen(false); }} />
             </>
           )}

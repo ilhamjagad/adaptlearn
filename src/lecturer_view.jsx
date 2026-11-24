@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Clock, CheckSquare, Users, Plus, Trophy, Edit2, Trash2, Save, X, Paperclip, Link as LinkIcon, AlertCircle, TrendingUp, BarChart3, UserX, Filter, UserPlus, Upload, CheckCircle2, ShieldCheck } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Clock, CheckSquare, Users, Plus, Trophy, Edit2, Trash2, Save, X, Paperclip, Link as LinkIcon, AlertCircle, TrendingUp, BarChart3, UserX, Filter, UserPlus, Upload, CheckCircle2, ShieldCheck, Bold, Italic, Underline, List, ListOrdered, RemoveFormatting, AlignLeft, AlignCenter, AlignRight, AlignJustify } from 'lucide-react';
 import { doc, deleteDoc, updateDoc, setDoc, collection, addDoc } from 'firebase/firestore';
 import emailjs from '@emailjs/browser';
 
@@ -394,6 +394,224 @@ function LecturerDashboard({ users, tasks, completions, studySessions }) {
   );
 }
 
+function WordDescriptionEditor({
+  value,
+  onChange,
+  placeholder = "Write your instructions or details here...",
+}) {
+  const editorRef = useRef(null);
+  const [activeFormats, setActiveFormats] = useState({
+    bold: false,
+    italic: false,
+    underline: false,
+    insertUnorderedList: false,
+    insertOrderedList: false,
+    justifyLeft: false,
+    justifyCenter: false,
+    justifyRight: false,
+    justifyFull: false,
+  });
+
+  useEffect(() => {
+    if (editorRef.current && editorRef.current.innerHTML !== (value || "")) {
+      editorRef.current.innerHTML = value || "";
+    }
+  }, [value]);
+
+  const updateToolbarState = () => {
+    if (!document.activeElement || editorRef.current !== document.activeElement)
+      return;
+    try {
+      setActiveFormats({
+        bold: document.queryCommandState("bold"),
+        italic: document.queryCommandState("italic"),
+        underline: document.queryCommandState("underline"),
+        insertUnorderedList: document.queryCommandState("insertUnorderedList"),
+        insertOrderedList: document.queryCommandState("insertOrderedList"),
+        justifyLeft: document.queryCommandState("justifyLeft"),
+        justifyCenter: document.queryCommandState("justifyCenter"),
+        justifyRight: document.queryCommandState("justifyRight"),
+        justifyFull: document.queryCommandState("justifyFull"),
+      });
+    } catch {
+      // Ignore if queryCommandState is unavailable
+    }
+  };
+
+  useEffect(() => {
+    document.addEventListener("selectionchange", updateToolbarState);
+    return () =>
+      document.removeEventListener("selectionchange", updateToolbarState);
+  }, []);
+
+  const applyFormat = (command) => {
+    editorRef.current?.focus();
+    document.execCommand(command, false, null);
+    updateToolbarState();
+    if (editorRef.current) {
+      onChange(editorRef.current.innerHTML);
+    }
+  };
+
+  const getBtnClass = (isActive) =>
+    `p-1.5 rounded-lg transition-all ${
+      isActive
+        ? "bg-white text-blue-600 shadow-md ring-1 ring-slate-200/80"
+        : "text-slate-700 hover:bg-white/80 hover:text-blue-600"
+    }`;
+
+  return (
+    <div className="rounded-xl border border-slate-300 bg-white overflow-hidden shadow-sm focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all">
+      {/* Toolbar ala Word */}
+      <div className="flex flex-wrap items-center gap-1 px-2.5 py-1.5 bg-slate-100 border-b border-slate-200">
+        {/* Text Style */}
+        <button
+          type="button"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            applyFormat("bold");
+          }}
+          title="Bold"
+          className={getBtnClass(activeFormats.bold)}
+        >
+          <Bold size={15} />
+        </button>
+        <button
+          type="button"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            applyFormat("italic");
+          }}
+          title="Italic"
+          className={getBtnClass(activeFormats.italic)}
+        >
+          <Italic size={15} />
+        </button>
+        <button
+          type="button"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            applyFormat("underline");
+          }}
+          title="Underline"
+          className={getBtnClass(activeFormats.underline)}
+        >
+          <Underline size={15} />
+        </button>
+
+        <span className="w-px h-4 bg-slate-300 mx-1" />
+
+        {/* Alignment */}
+        <button
+          type="button"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            applyFormat("justifyLeft");
+          }}
+          title="Align Left"
+          className={getBtnClass(activeFormats.justifyLeft)}
+        >
+          <AlignLeft size={15} />
+        </button>
+        <button
+          type="button"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            applyFormat("justifyCenter");
+          }}
+          title="Align Center"
+          className={getBtnClass(activeFormats.justifyCenter)}
+        >
+          <AlignCenter size={15} />
+        </button>
+        <button
+          type="button"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            applyFormat("justifyRight");
+          }}
+          title="Align Right"
+          className={getBtnClass(activeFormats.justifyRight)}
+        >
+          <AlignRight size={15} />
+        </button>
+        <button
+          type="button"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            applyFormat("justifyFull");
+          }}
+          title="Fill (Justify)"
+          className={getBtnClass(activeFormats.justifyFull)}
+        >
+          <AlignJustify size={15} />
+        </button>
+
+        <span className="w-px h-4 bg-slate-300 mx-1" />
+
+        {/* Lists */}
+        <button
+          type="button"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            applyFormat("insertUnorderedList");
+          }}
+          title="Bullet List"
+          className={getBtnClass(activeFormats.insertUnorderedList)}
+        >
+          <List size={15} />
+        </button>
+        <button
+          type="button"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            applyFormat("insertOrderedList");
+          }}
+          title="Numbered List"
+          className={getBtnClass(activeFormats.insertOrderedList)}
+        >
+          <ListOrdered size={15} />
+        </button>
+
+        <span className="w-px h-4 bg-slate-300 mx-1" />
+
+        {/* Clear Formatting */}
+        <button
+          type="button"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            applyFormat("removeFormat");
+          }}
+          title="Clear Formatting"
+          className="p-1.5 rounded-lg text-slate-700 hover:bg-white/80 hover:text-red-600 transition-colors"
+        >
+          <RemoveFormatting size={15} />
+        </button>
+      </div>
+
+      {/* Area Lembar Kerja Dokumen */}
+      <div className="bg-slate-50/70 p-3">
+        <div
+          ref={editorRef}
+          contentEditable
+          suppressContentEditableWarning
+          data-placeholder={placeholder}
+          onFocus={updateToolbarState}
+          onKeyUp={updateToolbarState}
+          onMouseUp={updateToolbarState}
+          onInput={(e) => {
+            updateToolbarState();
+            const html = e.currentTarget.innerHTML;
+            const plainText = e.currentTarget.textContent?.trim();
+            onChange(plainText ? html : "");
+          }}
+          className="min-h-[140px] max-h-72 overflow-y-auto bg-white border border-slate-200/80 rounded-lg px-4 py-3 text-sm text-slate-800 leading-relaxed shadow-inner focus:outline-none [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400"
+        />
+      </div>
+    </div>
+  );
+}
+
 function TaskManagement({ db, appId, tasks, lecturerId, showToast, students }) {
   const [newTask, setNewTask] = useState({ title: '', description: '', deadline: '', resourceUrl: '', course: '' });
   const [attachment, setAttachment] = useState(null);
@@ -550,7 +768,11 @@ function TaskManagement({ db, appId, tasks, lecturerId, showToast, students }) {
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Instructions / Description</label>
-            <textarea value={newTask.description} onChange={e => setNewTask({...newTask, description: e.target.value})} className="w-full px-4 py-2 rounded-lg border border-slate-300 h-24 resize-none" placeholder="Details about the assignment..." />
+            <WordDescriptionEditor
+              value={newTask.description}
+              onChange={html => setNewTask({ ...newTask, description: html })}
+              placeholder="Details about the assignment, instructions, guidelines..."
+            />
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center gap-2"><LinkIcon size={16} /> Resource URL</label>
@@ -653,10 +875,10 @@ function TaskManagement({ db, appId, tasks, lecturerId, showToast, students }) {
 
                     <div>
                       <label className="block text-xs font-semibold text-slate-600 mb-1">Instructions / Description</label>
-                      <textarea
+                      <WordDescriptionEditor
                         value={editTaskForm.description}
-                        onChange={e => setEditTaskForm({ ...editTaskForm, description: e.target.value })}
-                        className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm h-20 resize-none"
+                        onChange={html => setEditTaskForm({ ...editTaskForm, description: html })}
+                        placeholder="Details about the assignment, instructions, guidelines..."
                       />
                     </div>
 
@@ -693,7 +915,16 @@ function TaskManagement({ db, appId, tasks, lecturerId, showToast, students }) {
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
                       <h4 className="font-bold text-lg text-slate-800">{task.course ? `${task.title} - ${task.course}` : task.title}</h4>
-                      {task.description && <p className="text-sm text-slate-500 line-clamp-2 my-1">{task.description}</p>}
+                      {task.description && (
+                        /<[a-z][\s\S]*>/i.test(task.description) ? (
+                          <div
+                            className="text-sm text-slate-700 bg-slate-50 border border-slate-200/80 rounded-xl px-4 py-3 my-2 leading-relaxed max-h-48 overflow-y-auto [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
+                            dangerouslySetInnerHTML={{ __html: task.description }}
+                          />
+                        ) : (
+                          <p className="text-sm text-slate-500 line-clamp-2 my-1 whitespace-pre-line">{task.description}</p>
+                        )
+                      )}
                       <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-50 text-red-700 rounded text-xs font-semibold mt-1">
                         <Clock size={12} /> Due: {new Date(task.deadline).toLocaleDateString('en-GB')}
                       </span>
@@ -989,7 +1220,7 @@ function StudentProgress({ users, roster = [], db, appId, showToast }) {
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
-        <h1 className="text-3xl font-bold text-slate-900">Student Progress & Management</h1>
+        <h1 className="text-3xl font-bold text-slate-900">Student Management</h1>
         <p className="text-slate-500 mt-1">Manage official class roster whitelist, verify student identities, and track student levels.</p>
       </div>
 
@@ -1016,13 +1247,13 @@ function StudentProgress({ users, roster = [], db, appId, showToast }) {
         {showBulkRoster ? (
           <div className="space-y-3 mb-5 bg-white p-4 rounded-xl border border-slate-200">
             <label className="block text-xs font-semibold text-slate-700">
-              Paste Student List (Format per line: <code className="bg-slate-100 px-1.5 py-0.5 rounded">NIM, Official Full Name, UIN Email</code>)
+              Paste Student List (Format per line: <code className="bg-slate-100 px-1.5 py-0.5 rounded">NIM, Full Name, Email</code>)
             </label>
             <textarea
               rows={4}
               value={bulkRosterText}
               onChange={e => setBulkRosterText(e.target.value)}
-              placeholder={"11230910000001, Muhammad Ilham Jagad, ilham.jagad23@mhs.uinjkt.ac.id\n11230910000002, Farish Ahmad, farish.ahmad23@mhs.uinjkt.ac.id"}
+              placeholder="example: 1251420666, Muhammad Fulan, fulan25@mhs.uinjkt.ac.id"
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             <button
@@ -1043,29 +1274,26 @@ function StudentProgress({ users, roster = [], db, appId, showToast }) {
                 type="text"
                 value={rosterNim}
                 onChange={e => setRosterNim(e.target.value)}
-                placeholder="11230910000001"
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
               />
             </div>
             <div className="md:col-span-4">
-              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Official Full Name</label>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Full Name</label>
               <input
                 required
                 type="text"
                 value={rosterName}
                 onChange={e => setRosterName(e.target.value)}
-                placeholder="Muhammad Ilham Jagad"
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
               />
             </div>
             <div className="md:col-span-3">
-              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Institutional Email</label>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Email (@mhs.uinjkt.ac.id)</label>
               <input
                 required
                 type="text"
                 value={rosterEmail}
                 onChange={e => setRosterEmail(e.target.value)}
-                placeholder="ilham.jagad23@mhs.uinjkt.ac.id"
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
               />
             </div>

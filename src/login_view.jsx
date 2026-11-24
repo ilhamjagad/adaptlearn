@@ -258,7 +258,7 @@ export function LoginView({ onLogin, onRegister, onForgotPassword, onLookupRoste
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Institutional Email</label>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Email</label>
                   <div className="flex items-center gap-2">
                     <input
                       type="text"
@@ -274,11 +274,11 @@ export function LoginView({ onLogin, onRegister, onForgotPassword, onLookupRoste
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="block text-xs font-semibold text-slate-600">
-                      Official Full Name
+                      Full Name
                     </label>
                     {rosterVerified ? (
                       <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600">
-                        <CheckCircle2 size={13} /> Roster Verified
+                        <CheckCircle2 size={13} /> Verified
                       </span>
                     ) : (
                       <button
@@ -287,7 +287,7 @@ export function LoginView({ onLogin, onRegister, onForgotPassword, onLookupRoste
                         disabled={checkingRoster}
                         className="inline-flex items-center gap-1 text-[11px] font-bold text-[#0057D9] hover:underline disabled:opacity-50"
                       >
-                        <Search size={12} /> {checkingRoster ? 'Checking...' : 'Check Roster'}
+                        <Search size={12} /> {checkingRoster ? 'Checking...' : 'Check'}
                       </button>
                     )}
                   </div>
